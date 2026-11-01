@@ -20,27 +20,17 @@ OpenWarden is an independent, open-source, Bitwarden-compatible community client
 
 It does **not** bypass Bitwarden servers, fabricate server entitlements, or promise server-managed features it cannot deliver. Organizations, server storage, emergency access, sharing policies, Send limits, and other server-owned capabilities remain controlled by the server and account you connect.
 
-## Download v1.0.0
+## Download and install v1.0.0
 
-| Platform | Download | Package | Notes |
+| Platform | Download | Install | Full guide |
 | --- | --- | --- | --- |
-| Android | [OpenWarden APK](https://github.com/parthvgupta/OpenWarden/releases/latest/download/OpenWarden-1.0.0-android.apk) | `org.openwarden.app` | Android 10 or newer; signed release APK |
-| macOS | [Universal DMG](https://github.com/parthvgupta/OpenWarden/releases/latest/download/OpenWarden-1.0.0-universal.dmg) | Apple Silicon + Intel | Ad-hoc signed; not Apple-notarized |
-| Brave / Chrome | [Chromium extension ZIP](https://github.com/parthvgupta/OpenWarden/releases/latest/download/OpenWarden-1.0.0-chrome-brave.zip) | Manifest V3 | Install unpacked using Developer mode |
-
-Release hashes are published in [`SHA256SUMS`](SHA256SUMS). Never install a binary whose hash does not match.
-
-## Install and documentation
-
-| Platform | Install | Full guide |
-| --- | --- | --- |
-| Android | Open the verified APK | [Install, inspect, build, and verify](android/README.md) |
-| macOS | Open the DMG, drag OpenWarden to Applications, then right-click **Open** on first launch | [Install, inspect, build, and verify](macos/README.md) |
-| Brave / Chrome | Extract the ZIP, enable Developer mode, and choose **Load unpacked** | [Install, inspect, build, and verify](extension/README.md) |
+| Android | [OpenWarden APK](https://github.com/parthvgupta/OpenWarden/releases/latest/download/OpenWarden-1.0.0-android.apk) | Android 10+ · open the verified APK · package `org.openwarden.app` | [Inspect, build, and verify](android/README.md) |
+| macOS | [Universal DMG](https://github.com/parthvgupta/OpenWarden/releases/latest/download/OpenWarden-1.0.0-universal.dmg) | Apple Silicon + Intel · drag to Applications · right-click **Open** on first launch · not notarized | [Inspect, build, and verify](macos/README.md) |
+| Brave / Chrome | [Extension ZIP](https://github.com/parthvgupta/OpenWarden/releases/latest/download/OpenWarden-1.0.0-chrome-brave.zip) | Manifest V3 · extract · enable Developer mode · **Load unpacked** | [Inspect, build, and verify](extension/README.md) |
 
 **Project docs:** [Compatibility](docs/COMPATIBILITY.md) · [Troubleshooting](docs/TROUBLESHOOTING.md) · [Release policy](docs/RELEASES.md) · [Help and bug reports](SUPPORT.md)
 
-Updates are manual. Verify every download against [`SHA256SUMS`](SHA256SUMS).
+Updates are manual. Verify every download against [`SHA256SUMS`](SHA256SUMS); never install a binary whose hash does not match.
 
 ## What “client-side” means
 
