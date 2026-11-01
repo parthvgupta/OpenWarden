@@ -30,6 +30,18 @@ It does **not** bypass Bitwarden servers, fabricate server entitlements, or prom
 
 Release hashes are published in [`SHA256SUMS`](SHA256SUMS). Never install a binary whose hash does not match.
 
+## Install and documentation
+
+| Platform | Install | Full guide |
+| --- | --- | --- |
+| Android | Open the verified APK | [Install, inspect, build, and verify](android/README.md) |
+| macOS | Open the DMG, drag OpenWarden to Applications, then right-click **Open** on first launch | [Install, inspect, build, and verify](macos/README.md) |
+| Brave / Chrome | Extract the ZIP, enable Developer mode, and choose **Load unpacked** | [Install, inspect, build, and verify](extension/README.md) |
+
+**Project docs:** [Compatibility](docs/COMPATIBILITY.md) · [Troubleshooting](docs/TROUBLESHOOTING.md) · [Release policy](docs/RELEASES.md) · [Help and bug reports](SUPPORT.md)
+
+Updates are manual. Verify every download against [`SHA256SUMS`](SHA256SUMS).
+
 ## What “client-side” means
 
 OpenWarden enables functionality that can be implemented safely on your own device, including built-in authenticator codes, vault-health reporting, password-risk analysis, phishing and suspicious-domain warnings, and a device-local vault archive.
@@ -79,29 +91,6 @@ The v1.0.0 binaries were built locally from the patches in this repository. The 
 | Android | [`bitwarden/android@262dba3`](https://github.com/bitwarden/android/tree/262dba3e663b2f9a4f2196515331bce9d7b58ad9) | [`android/code-changes`](android/code-changes/) |
 | macOS | [`bitwarden/clients@b793bdc`](https://github.com/bitwarden/clients/tree/b793bdc6cf15f87814f0b3de26b795afcc7774ec) | [`macos/code-changes`](macos/code-changes/) + [`shared/code-changes`](shared/code-changes/) |
 | Brave / Chrome | [`bitwarden/clients@b793bdc`](https://github.com/bitwarden/clients/tree/b793bdc6cf15f87814f0b3de26b795afcc7774ec) | [`extension/code-changes`](extension/code-changes/) + [`shared/code-changes`](shared/code-changes/) |
-
-Start with the platform guides:
-
-- [Android: install, inspect, build, and verify](android/README.md)
-- [macOS: install, inspect, build, and verify](macos/README.md)
-- [Brave/Chrome: install, inspect, build, and verify](extension/README.md)
-
-Project guidance:
-
-- [Compatibility with Bitwarden and Vaultwarden](docs/COMPATIBILITY.md)
-- [Troubleshooting login, sync, and installation](docs/TROUBLESHOOTING.md)
-- [Release and update policy](docs/RELEASES.md)
-- [Getting help and reporting bugs](SUPPORT.md)
-
-## Quick install
-
-| Platform | Install |
-| --- | --- |
-| Android | Download the APK, verify its hash, and open it. [Detailed guide](android/README.md) |
-| macOS | Open the DMG and drag OpenWarden to Applications. For the first launch, right-click the app and choose **Open**. [Detailed guide](macos/README.md) |
-| Brave / Chrome | Extract the ZIP, enable Developer mode at `brave://extensions` or `chrome://extensions`, then choose **Load unpacked**. [Detailed guide](extension/README.md) |
-
-Updates are manual. Verify every download against [`SHA256SUMS`](SHA256SUMS); see the [release policy](docs/RELEASES.md) for platform-specific identity checks.
 
 ## Security model
 
