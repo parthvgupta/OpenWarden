@@ -1,0 +1,20 @@
+OpenWarden is an independent community project derived from portions of the
+open-source Bitwarden client applications.
+
+Upstream projects:
+
+  Bitwarden Android
+  https://github.com/bitwarden/android
+
+  Bitwarden Clients
+  https://github.com/bitwarden/clients
+
+OpenWarden is not affiliated with, sponsored by, or endorsed by Bitwarden,
+Inc. Bitwarden names and trademarks are used only to identify compatibility
+and upstream origin. No ownership of Bitwarden trademarks is claimed.
+
+The upstream source is licensed primarily under GNU GPL v3. Some upstream
+files may contain their own license headers or additional terms. Those notices
+and terms remain applicable. OpenWarden does not include the
+`bitwarden_license` commercial modules in its published patch set.
+

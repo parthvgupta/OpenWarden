@@ -1,0 +1,750 @@
+diff --git a/libs/assets/src/svg/svgs/index.ts b/libs/assets/src/svg/svgs/index.ts
+index 37a48af47a63255d0ddfd328d8a98a3cac973117..21455c1ba0c087f1c4d9296f564bda7c6655732e 100644
+--- a/libs/assets/src/svg/svgs/index.ts
++++ b/libs/assets/src/svg/svgs/index.ts
+@@ -121,3 +121,4 @@ export * from "./vault.icon";
+ export * from "./vault";
+ export * from "./wave.icon";
+ export * from "./health.icon";
++export * from "./openwarden-logo.icon";
+diff --git a/libs/assets/src/svg/svgs/openwarden-logo.icon.ts b/libs/assets/src/svg/svgs/openwarden-logo.icon.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..4ee6d2f2fcb8b8744dc9c68aabef552c4572b7fc
+--- /dev/null
++++ b/libs/assets/src/svg/svgs/openwarden-logo.icon.ts
+@@ -0,0 +1,21 @@
++import { svg } from "../svg";
++
++/** OpenWarden wordmark using the Bitwarden-compatible shield and community palette. */
++export const OpenWardenLogo = svg`
++  <svg viewBox="0 0 290 45" xmlns="http://www.w3.org/2000/svg" role="img">
++    <title>OpenWarden</title>
++    <path
++      fill="#FDB44B"
++      d="M32.041 24.546V5.95H18.848v33.035c2.336-1.22 4.427-2.547 6.272-3.98 4.614-3.565 6.921-7.051 6.921-10.46Zm5.654-22.314v22.314c0 1.665-.329 3.317-.986 4.953-.658 1.637-1.473 3.09-2.445 4.359-.971 1.268-2.13 2.503-3.475 3.704-1.345 1.2-2.586 2.199-3.725 2.993a46.963 46.963 0 0 1-3.563 2.251c-1.237.707-2.116 1.187-2.636 1.439-.52.251-.938.445-1.252.58-.235.117-.49.175-.765.175s-.53-.058-.766-.174c-.314-.136-.731-.33-1.252-.581-.52-.252-1.398-.732-2.635-1.439a47.003 47.003 0 0 1-3.564-2.251c-1.138-.794-2.38-1.792-3.725-2.993-1.345-1.2-2.503-2.436-3.475-3.704-.972-1.27-1.787-2.722-2.444-4.359C.329 27.863 0 26.211 0 24.546V2.232c0-.504.187-.94.56-1.308A1.823 1.823 0 0 1 1.885.372H35.81c.511 0 .953.184 1.326.552.373.368.56.804.56 1.308Z"
++    />
++    <text
++      x="51"
++      y="32"
++      fill="currentColor"
++      font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
++      font-size="27"
++      font-weight="650"
++      letter-spacing="-0.7"
++    >OpenWarden</text>
++  </svg>
++`;
+diff --git a/libs/common/src/community/community-client-features.ts b/libs/common/src/community/community-client-features.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..0e36e78402336b2ae67238eaf84ef44dedb6519a
+--- /dev/null
++++ b/libs/common/src/community/community-client-features.ts
+@@ -0,0 +1,13 @@
++/**
++ * Client-only capabilities maintained by the community distribution.
++ *
++ * These flags must never be used for API authorization, storage quotas, organization
++ * membership, or any other capability enforced by a Bitwarden server.
++ */
++export const COMMUNITY_CLIENT_FEATURES = Object.freeze({
++  integratedTotp: true,
++  localArchive: true,
++  passwordRiskInsights: true,
++  vaultHealth: true,
++  phishingDetection: true,
++});
+diff --git a/libs/common/src/dirt/services/phishing-detection/phishing-detection-settings.service.spec.ts b/libs/common/src/dirt/services/phishing-detection/phishing-detection-settings.service.spec.ts
+index f47802b9461d66babc0362cc462ebe5763e7e6d0..6354dd217a76b051c072fd4fc2047c3475515a90 100644
+--- a/libs/common/src/dirt/services/phishing-detection/phishing-detection-settings.service.spec.ts
++++ b/libs/common/src/dirt/services/phishing-detection/phishing-detection-settings.service.spec.ts
+@@ -1,5 +1,5 @@
+ import { mock, MockProxy } from "jest-mock-extended";
+-import { BehaviorSubject, firstValueFrom, Subject } from "rxjs";
++import { BehaviorSubject, firstValueFrom } from "rxjs";
+ 
+ import { LogService } from "@bitwarden/logging";
+ 
+@@ -131,14 +131,14 @@ describe("PhishingDetectionSettingsService", () => {
+     });
+   });
+ 
+-  it("returns false immediately when the feature flag is disabled, regardless of other conditions", async () => {
++  it("remains available in the community client when the remote flag is disabled", async () => {
+     activeAccountSubject.next(account);
+     premiumStatusSubject.next(true);
+     organizationsSubject.next([familyOrg]);
+ 
+     featureFlagSubject.next(false);
+ 
+-    await expect(getAccess()).resolves.toBe(false);
++    await expect(getAccess()).resolves.toBe(true);
+   });
+ 
+   it("returns false if there is no active account present yet", async () => {
+@@ -176,22 +176,16 @@ describe("PhishingDetectionSettingsService", () => {
+     await expect(getAccess()).resolves.toBe(true);
+   });
+ 
+-  it("returns false when user has no access through personal premium or organizations", async () => {
++  it("returns true without personal premium or an eligible organization", async () => {
+     activeAccountSubject.next(account);
+     featureFlagSubject.next(true);
+     premiumStatusSubject.next(false);
+     organizationsSubject.next([teamOrg]); // Team org does not give access
+ 
+-    await expect(getAccess()).resolves.toBe(false);
++    await expect(getAccess()).resolves.toBe(true);
+   });
+ 
+   it("shares/caches the available$ result between multiple subscribers", async () => {
+-    // Use a plain Subject for this test so we control when the premium observable emits
+-    // and avoid the BehaviorSubject's initial emission which can race with subscriptions.
+-    // Provide the Subject directly as the mock return value for the billing service
+-    const oneTimePremium = new Subject<boolean>();
+-    mockBillingService.hasPremiumPersonally$.mockReturnValueOnce(oneTimePremium.asObservable());
+-
+     activeAccountSubject.next(account);
+     featureFlagSubject.next(true);
+     organizationsSubject.next([]);
+@@ -199,14 +193,10 @@ describe("PhishingDetectionSettingsService", () => {
+     const p1 = firstValueFrom(service.available$);
+     const p2 = firstValueFrom(service.available$);
+ 
+-    // Trigger the pipeline
+-    oneTimePremium.next(true);
+-
+     const [first, second] = await Promise.all([p1, p2]);
+ 
+     expect(first).toBe(true);
+     expect(second).toBe(true);
+-    // The billing function should have been called at most once due to caching
+-    expect(mockBillingService.hasPremiumPersonally$).toHaveBeenCalledTimes(1);
++    expect(mockBillingService.hasPremiumPersonally$).not.toHaveBeenCalled();
+   });
+ });
+diff --git a/libs/common/src/dirt/services/phishing-detection/phishing-detection-settings.service.ts b/libs/common/src/dirt/services/phishing-detection/phishing-detection-settings.service.ts
+index 1ef31607f94d25492c7f94767ac17e1b3d5f4b66..2976cd642512513ca384d2fbe7e5419619336b78 100644
+--- a/libs/common/src/dirt/services/phishing-detection/phishing-detection-settings.service.ts
++++ b/libs/common/src/dirt/services/phishing-detection/phishing-detection-settings.service.ts
+@@ -4,11 +4,13 @@ import { catchError, distinctUntilChanged, map, shareReplay, tap } from "rxjs/op
+ import { LogService } from "@bitwarden/logging";
+ import { UserId } from "@bitwarden/user-core";
+ 
++
+ import { OrganizationService } from "../../../admin-console/abstractions/organization/organization.service.abstraction";
+ import { Organization } from "../../../admin-console/models/domain/organization";
+ import { AccountService } from "../../../auth/abstractions/account.service";
+ import { BillingAccountProfileStateService } from "../../../billing/abstractions";
+ import { ProductTierType } from "../../../billing/enums";
++import { COMMUNITY_CLIENT_FEATURES } from "../../../community/community-client-features";
+ import { FeatureFlag } from "../../../enums/feature-flag.enum";
+ import { ConfigService } from "../../../platform/abstractions/config/config.service";
+ import { PlatformUtilsService } from "../../../platform/abstractions/platform-utils.service";
+@@ -96,9 +98,12 @@ export class PhishingDetectionSettingsService implements PhishingDetectionSettin
+       this.configService.getFeatureFlag$(FeatureFlag.PhishingDetection),
+     ]).pipe(
+       switchMap(([account, featureEnabled]) => {
+-        if (!account || !featureEnabled) {
++        if (!account || (!featureEnabled && !COMMUNITY_CLIENT_FEATURES.phishingDetection)) {
+           return of(false);
+         }
++        if (COMMUNITY_CLIENT_FEATURES.phishingDetection) {
++          return of(true);
++        }
+         return combineLatest([
+           this.billingService.hasPremiumPersonally$(account.id).pipe(catchError(() => of(false))),
+           this.organizationService.organizations$(account.id).pipe(catchError(() => of([]))),
+diff --git a/libs/common/src/dirt/vault-health/models/view/vault-health-report.view.ts b/libs/common/src/dirt/vault-health/models/view/vault-health-report.view.ts
+index 481e3d7139de8ac17db25b43482411427045a032..9e428d757787e97337c1e9be24fec7c560af76f8 100644
+--- a/libs/common/src/dirt/vault-health/models/view/vault-health-report.view.ts
++++ b/libs/common/src/dirt/vault-health/models/view/vault-health-report.view.ts
+@@ -4,6 +4,22 @@ import { RiskCategory } from "../risk-category";
+ 
+ type CategoryRecord<T> = Record<RiskCategory, T>;
+ 
++export type CommunityVaultHealthChecks = {
++  old: number;
++  unsecured: number;
++  suspicious: number;
++  duplicate: number;
++  missingTwoFactor: number;
++};
++
++const EMPTY_COMMUNITY_CHECKS: CommunityVaultHealthChecks = {
++  old: 0,
++  unsecured: 0,
++  suspicious: 0,
++  duplicate: 0,
++  missingTwoFactor: 0,
++};
++
+ /**
+  * The aggregated, deduplicated, scored vault-health result for the browser
+  * Health tab. Computed on demand from the per-login SDK risk metrics; not
+@@ -25,12 +41,15 @@ export class VaultHealthReportView implements View {
+    * the delete-from-detail dialog) can read it here without a separate list.
+    */
+   categoryItems: CategoryRecord<CipherHealthView[]> = { exposed: [], weak: [], reused: [] };
++  /** Additional device-computed checks that do not require an organization or Bitwarden API. */
++  communityChecks: CommunityVaultHealthChecks = { ...EMPTY_COMMUNITY_CHECKS };
+ 
+   constructor(init?: Partial<VaultHealthReportView>) {
+     if (init == null) {
+       return;
+     }
+     Object.assign(this, init);
++    this.communityChecks = { ...EMPTY_COMMUNITY_CHECKS, ...init.communityChecks };
+   }
+ 
+   /**
+@@ -42,6 +61,7 @@ export class VaultHealthReportView implements View {
+   static fromCipherHealth(
+     healthViews: CipherHealthView[],
+     totalCount: number,
++    communityChecks: CommunityVaultHealthChecks = EMPTY_COMMUNITY_CHECKS,
+   ): VaultHealthReportView {
+     const atRisk = healthViews.filter((health) => health.isAtRisk());
+ 
+@@ -58,6 +78,7 @@ export class VaultHealthReportView implements View {
+       atRiskCount: atRisk.length,
+       score: totalCount === 0 ? 0 : atRisk.length / totalCount,
+       categoryItems,
++      communityChecks,
+     });
+   }
+ }
+diff --git a/libs/common/src/dirt/vault-health/services/implementations/default-vault-health-report.service.ts b/libs/common/src/dirt/vault-health/services/implementations/default-vault-health-report.service.ts
+index d7e71a947700098fb5497674beb0733842f6864f..b4fd5b4262d08096b543fc99d3c9a674cd35738c 100644
+--- a/libs/common/src/dirt/vault-health/services/implementations/default-vault-health-report.service.ts
++++ b/libs/common/src/dirt/vault-health/services/implementations/default-vault-health-report.service.ts
+@@ -196,12 +196,93 @@ export class DefaultVaultHealthReportService implements VaultHealthReportService
+ 
+     // Each CipherRiskResult carries its own `id`, so map results to per-login
+     // views directly by id (no reliance on array position).
++    const additionalChecks = this.computeCommunityChecks(logins);
+     return VaultHealthReportView.fromCipherHealth(
+       risks.map((risk) => this.toCipherHealthView(risk)),
+       totalCount,
++      additionalChecks,
+     );
+   }
+ 
++  private computeCommunityChecks(logins: CipherView[]): {
++    old: number;
++    unsecured: number;
++    suspicious: number;
++    duplicate: number;
++    missingTwoFactor: number;
++  } {
++    const oldIds = new Set<string>();
++    const unsecuredIds = new Set<string>();
++    const suspiciousIds = new Set<string>();
++    const missingTwoFactorIds = new Set<string>();
++    const duplicateGroups = new Map<string, Set<string>>();
++    const oldPasswordCutoff = Date.now() - 180 * 24 * 60 * 60 * 1000;
++
++    for (const cipher of logins) {
++      const id = cipher.id;
++      const passwordDate = cipher.login?.passwordRevisionDate ?? cipher.revisionDate;
++      if (passwordDate != null && passwordDate.getTime() < oldPasswordCutoff) {
++        oldIds.add(id);
++      }
++
++      const uris = cipher.login?.uris ?? [];
++      if (uris.some((uri) => uri.uri?.trim().toLowerCase().startsWith("http://"))) {
++        unsecuredIds.add(id);
++      }
++      if (
++        uris.some((uri) =>
++          this.tryGetHost(uri.uri)
++            ?.split(".")
++            .some((label) => label.startsWith("xn--")),
++        )
++      ) {
++        suspiciousIds.add(id);
++      }
++
++      if (!cipher.login?.totp && !cipher.login?.hasFido2Credentials) {
++        missingTwoFactorIds.add(id);
++      }
++
++      const username = cipher.login?.username?.trim().toLowerCase() ?? "";
++      for (const uri of uris) {
++        const host = this.tryGetHost(uri.uri);
++        if (host == null) {
++          continue;
++        }
++        const key = `${host}\n${username}`;
++        const ids = duplicateGroups.get(key) ?? new Set<string>();
++        ids.add(id);
++        duplicateGroups.set(key, ids);
++      }
++    }
++
++    const duplicateIds = new Set<string>();
++    for (const ids of duplicateGroups.values()) {
++      if (ids.size > 1) {
++        ids.forEach((id) => duplicateIds.add(id));
++      }
++    }
++
++    return {
++      old: oldIds.size,
++      unsecured: unsecuredIds.size,
++      suspicious: suspiciousIds.size,
++      duplicate: duplicateIds.size,
++      missingTwoFactor: missingTwoFactorIds.size,
++    };
++  }
++
++  private tryGetHost(uri: string | null | undefined): string | null {
++    if (!uri) {
++      return null;
++    }
++    try {
++      return new URL(uri).hostname.toLowerCase() || null;
++    } catch {
++      return null;
++    }
++  }
++
+   private throwIfExposedCheckFailed(risks: CipherRiskResult[]): void {
+     const messages = risks.flatMap((risk) =>
+       risk.exposed_result.type === "Error" ? [risk.exposed_result.value] : [],
+diff --git a/libs/common/src/vault/abstractions/cipher.service.ts b/libs/common/src/vault/abstractions/cipher.service.ts
+index c195ff607fce79013534fb6124b17cade64e6083..f00ab7d29ae4f16395cf4450cbe61a645374b65a 100644
+--- a/libs/common/src/vault/abstractions/cipher.service.ts
++++ b/libs/common/src/vault/abstractions/cipher.service.ts
+@@ -69,6 +69,12 @@ export abstract class CipherService implements UserKeyRotationDataProvider<Ciphe
+   /** Not filtered: includes restricted ciphers, as do {@link get} and {@link getAll}. */
+   abstract ciphers$(userId: UserId): Observable<Record<CipherId, CipherData>>;
+   abstract localData$(userId: UserId): Observable<Record<CipherId, LocalData>>;
++  /** Updates the device-local archive overlay without contacting a server. */
++  abstract updateLocalArchive(
++    ids: CipherId | CipherId[],
++    archived: boolean,
++    userId: UserId,
++  ): Promise<CipherData | undefined>;
+   /**
+    *  An observable monitoring the add/edit cipher info saved to memory.
+    */
+diff --git a/libs/common/src/vault/models/data/local.data.ts b/libs/common/src/vault/models/data/local.data.ts
+index 50a24feba6f85e403a18e503b624ac45e558c523..5a92911d7e43ec63db7e4ef00511068a94c9337b 100644
+--- a/libs/common/src/vault/models/data/local.data.ts
++++ b/libs/common/src/vault/models/data/local.data.ts
+@@ -6,6 +6,8 @@ import {
+ export type LocalData = {
+   lastUsedDate?: number;
+   lastLaunched?: number;
++  /** Device-local archive overlay. This value is never serialized into SDK or API payloads. */
++  communityArchivedAt?: number;
+ };
+ 
+ /**
+diff --git a/libs/common/src/vault/models/domain/cipher.ts b/libs/common/src/vault/models/domain/cipher.ts
+index 4e083ab243045e974aeadf50334922df4bde8a09..80466129dc4c11b5d11bd5c686049da65981581a 100644
+--- a/libs/common/src/vault/models/domain/cipher.ts
++++ b/libs/common/src/vault/models/domain/cipher.ts
+@@ -121,6 +121,9 @@ export class Cipher extends Domain {
+     this.creationDate = new Date(obj.creationDate);
+     this.deletedDate = obj.deletedDate != null ? new Date(obj.deletedDate) : undefined;
+     this.archivedDate = obj.archivedDate != null ? new Date(obj.archivedDate) : undefined;
++    if (localData?.communityArchivedAt != null && this.archivedDate == null) {
++      this.archivedDate = new Date(localData.communityArchivedAt);
++    }
+     this.reprompt = obj.reprompt;
+     this.key = conditionalEncString(obj.key);
+     this.data = obj.data;
+diff --git a/libs/common/src/vault/services/cipher.service.ts b/libs/common/src/vault/services/cipher.service.ts
+index 7c9ec3fcdac2ab1c3782270db3df8311d30b8ff9..1f122c546bfaf3d7546c9cc89a5a1b5b6e8fad77 100644
+--- a/libs/common/src/vault/services/cipher.service.ts
++++ b/libs/common/src/vault/services/cipher.service.ts
+@@ -105,6 +105,50 @@ export class CipherService implements CipherServiceAbstraction {
+     return this.localDataState(userId).state$.pipe(map((data) => data ?? {}));
+   }
+ 
++  async updateLocalArchive(
++    ids: CipherId | CipherId[],
++    archived: boolean,
++    userId: UserId,
++  ): Promise<CipherData | undefined> {
++    const cipherIds = Array.isArray(ids) ? ids : [ids];
++    const localData = { ...(await firstValueFrom(this.localData$(userId))) };
++    const archivedAt = Date.now();
++
++    for (const cipherId of cipherIds) {
++      const entry = { ...(localData[cipherId] ?? {}) };
++      if (archived) {
++        entry.communityArchivedAt = archivedAt;
++        localData[cipherId] = entry;
++      } else {
++        delete entry.communityArchivedAt;
++        if (Object.keys(entry).length === 0) {
++          delete localData[cipherId];
++        } else {
++          localData[cipherId] = entry;
++        }
++      }
++    }
++
++    const ciphers = await firstValueFrom(this.ciphers$(userId));
++    const decryptedCipherCache = await this.getDecryptedCiphers(userId);
++    for (const cipher of decryptedCipherCache) {
++      if (!cipherIds.includes(cipher.id as CipherId)) {
++        continue;
++      }
++      cipher.localData = localData[cipher.id as CipherId];
++      const serverArchivedDate = ciphers[cipher.id as CipherId]?.archivedDate;
++      cipher.archivedDate = archived
++        ? new Date(archivedAt)
++        : serverArchivedDate
++          ? new Date(serverArchivedDate)
++          : undefined;
++    }
++    await this.setDecryptedCiphers(decryptedCipherCache, userId);
++    await this.localDataState(userId).update(() => localData);
++
++    return ciphers[cipherIds[0]];
++  }
++
+   /**
+    * Observable that emits an object of encrypted ciphers for the active user.
+    */
+diff --git a/libs/common/src/vault/services/community-cipher-archive.service.spec.ts b/libs/common/src/vault/services/community-cipher-archive.service.spec.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..e27a1091e6e2cccfcbd0eff6a0c51661f76f3a97
+--- /dev/null
++++ b/libs/common/src/vault/services/community-cipher-archive.service.spec.ts
+@@ -0,0 +1,42 @@
++import { mock } from "jest-mock-extended";
++import { firstValueFrom } from "rxjs";
++
++
++import { ApiService } from "../../abstractions/api.service";
++import { BillingAccountProfileStateService } from "../../billing/abstractions";
++import { CipherId, UserId } from "../../types/guid";
++import { CipherService } from "../abstractions/cipher.service";
++
++import { CommunityCipherArchiveService } from "./community-cipher-archive.service";
++
++describe("CommunityCipherArchiveService", () => {
++  const userId = "user-id" as UserId;
++  const cipherId = "cipher-id" as CipherId;
++  const cipherService = mock<CipherService>();
++  const service = new CommunityCipherArchiveService(
++    cipherService,
++    mock<ApiService>(),
++    mock<BillingAccountProfileStateService>(),
++  );
++
++  beforeEach(() => jest.clearAllMocks());
++
++  it("makes archive available without reporting a lapsed subscription", async () => {
++    await expect(firstValueFrom(service.userCanArchive$(userId))).resolves.toBe(true);
++    await expect(firstValueFrom(service.showSubscriptionEndedMessaging$(userId))).resolves.toBe(
++      false,
++    );
++  });
++
++  it("archives locally without calling an API", async () => {
++    await service.archiveWithServer(cipherId, userId);
++
++    expect(cipherService.updateLocalArchive).toHaveBeenCalledWith(cipherId, true, userId);
++  });
++
++  it("unarchives locally without calling an API", async () => {
++    await service.unarchiveWithServer(cipherId, userId);
++
++    expect(cipherService.updateLocalArchive).toHaveBeenCalledWith(cipherId, false, userId);
++  });
++});
+diff --git a/libs/common/src/vault/services/community-cipher-archive.service.ts b/libs/common/src/vault/services/community-cipher-archive.service.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..ebc5943e17c3d3547ca789ace43c91204218b05f
+--- /dev/null
++++ b/libs/common/src/vault/services/community-cipher-archive.service.ts
+@@ -0,0 +1,49 @@
++import { Observable, of } from "rxjs";
++
++import { ApiService } from "../../abstractions/api.service";
++import { BillingAccountProfileStateService } from "../../billing/abstractions";
++import { CipherId, UserId } from "../../types/guid";
++import { CipherService } from "../abstractions/cipher.service";
++import { CipherData } from "../models/data/cipher.data";
++
++import { DefaultCipherArchiveService } from "./default-cipher-archive.service";
++
++/**
++ * Archive implementation for the community clients. Archive state is kept in
++ * the per-user local-data store and never sent to Bitwarden's archive API.
++ */
++export class CommunityCipherArchiveService extends DefaultCipherArchiveService {
++  constructor(
++    private readonly localCipherService: CipherService,
++    apiService: ApiService,
++    billingAccountProfileStateService: BillingAccountProfileStateService,
++  ) {
++    super(localCipherService, apiService, billingAccountProfileStateService);
++  }
++
++  override userCanArchive$(_userId: UserId): Observable<boolean> {
++    return of(true);
++  }
++
++  override userHasPremium$(_userId: UserId): Observable<boolean> {
++    return of(true);
++  }
++
++  override showSubscriptionEndedMessaging$(_userId: UserId): Observable<boolean> {
++    return of(false);
++  }
++
++  override async archiveWithServer(
++    ids: CipherId | CipherId[],
++    userId: UserId,
++  ): Promise<CipherData> {
++    return (await this.localCipherService.updateLocalArchive(ids, true, userId)) as CipherData;
++  }
++
++  override async unarchiveWithServer(
++    ids: CipherId | CipherId[],
++    userId: UserId,
++  ): Promise<CipherData> {
++    return (await this.localCipherService.updateLocalArchive(ids, false, userId)) as CipherData;
++  }
++}
+diff --git a/libs/common/src/vault/utils/hydrate-ciphers-with-local-data.ts b/libs/common/src/vault/utils/hydrate-ciphers-with-local-data.ts
+index 1c09c82274f5491e1d792f695f5b0ec97f0507b6..fcd11abf0e3fce3e6c50450a8045f5bab6d7a2c5 100644
+--- a/libs/common/src/vault/utils/hydrate-ciphers-with-local-data.ts
++++ b/libs/common/src/vault/utils/hydrate-ciphers-with-local-data.ts
+@@ -24,6 +24,9 @@ export function hydrateCiphersWithLocalData(
+       const data = localData[cipher.id as CipherId];
+       if (data) {
+         cipher.localData = data;
++        if (data.communityArchivedAt != null && cipher.archivedDate == null) {
++          cipher.archivedDate = new Date(data.communityArchivedAt);
++        }
+       }
+     }
+   }
+diff --git a/libs/vault/src/cipher-view/cipher-view.component.html b/libs/vault/src/cipher-view/cipher-view.component.html
+index adf8158b58a5f33dc758d58f213b7ef68596382e..dfc40306c99d0495aaf1dbaeef24690985ac1153 100644
+--- a/libs/vault/src/cipher-view/cipher-view.component.html
++++ b/libs/vault/src/cipher-view/cipher-view.component.html
+@@ -5,6 +5,12 @@
+     </bit-callout>
+   }
+ 
++  @if (hasSuspiciousUri()) {
++    <bit-callout type="warning" [title]="'suspiciousDomainWarningTitle' | i18n">
++      {{ "suspiciousDomainWarningDesc" | i18n }}
++    </bit-callout>
++  }
++
+   <!-- HELPER TEXT -->
+   @if (cipher()?.isDeleted && !cipher()?.edit) {
+     <p class="tw-text-muted" bitTypography="helper">
+diff --git a/libs/vault/src/cipher-view/cipher-view.component.spec.ts b/libs/vault/src/cipher-view/cipher-view.component.spec.ts
+index 14c0b535370b62b07b583963bd240e39bcfe8d00..c62dab3cc45cc80aa4e935297010ca210f22049c 100644
+--- a/libs/vault/src/cipher-view/cipher-view.component.spec.ts
++++ b/libs/vault/src/cipher-view/cipher-view.component.spec.ts
+@@ -426,7 +426,7 @@ describe("CipherViewComponent", () => {
+       expect(component.passwordIsAtRisk()).toBe(false);
+     }));
+ 
+-    it("returns false when user is not premium", fakeAsync(() => {
++    it("computes local password risk when user is not premium", fakeAsync(() => {
+       hasPremiumFromAnySource$.next(false);
+ 
+       const cipher = createLoginCipherView();
+@@ -434,7 +434,11 @@ describe("CipherViewComponent", () => {
+       fixture.detectChanges();
+       tick();
+ 
+-      expect(mockCipherRiskService.computeCipherRiskForUser).not.toHaveBeenCalled();
++      expect(mockCipherRiskService.computeCipherRiskForUser).toHaveBeenCalledWith(
++        cipher.id,
++        "test-user-id",
++        true,
++      );
+       expect(component.passwordIsAtRisk()).toBe(false);
+     }));
+ 
+diff --git a/libs/vault/src/cipher-view/cipher-view.component.ts b/libs/vault/src/cipher-view/cipher-view.component.ts
+index 56d121e9a837c3bdd6ff73a1362830ba04858956..f3869b1121acc465ad0f593ccf65473e06e8af6c 100644
+--- a/libs/vault/src/cipher-view/cipher-view.component.ts
++++ b/libs/vault/src/cipher-view/cipher-view.component.ts
+@@ -13,6 +13,7 @@ import { AccountService } from "@bitwarden/common/auth/abstractions/account.serv
+ import { getOptionalUserId } from "@bitwarden/common/auth/services/account.service";
+ import { isCardExpired } from "@bitwarden/common/autofill/utils";
+ import { BillingAccountProfileStateService } from "@bitwarden/common/billing/abstractions";
++import { COMMUNITY_CLIENT_FEATURES } from "@bitwarden/common/community/community-client-features";
+ import { LogService } from "@bitwarden/common/platform/abstractions/log.service";
+ import { PlatformUtilsService } from "@bitwarden/common/platform/abstractions/platform-utils.service";
+ import { getByIds } from "@bitwarden/common/platform/misc";
+@@ -77,6 +78,15 @@ export class CipherViewComponent {
+    * The cipher to display details for
+    */
+   readonly cipher = input.required<CipherView>();
++  readonly hasSuspiciousUri = computed(() =>
++    (this.cipher().login?.uris ?? []).some((uri) => {
++      try {
++        return new URL(uri.uri ?? "").hostname.split(".").some((label) => label.startsWith("xn--"));
++      } catch {
++        return false;
++      }
++    }),
++  );
+ 
+   /** Host-provided banner below the cipher's details; null when unprovided. */
+   protected readonly bannerComponent: CipherViewBanner | null = inject(CIPHER_VIEW_BANNER, {
+@@ -381,6 +391,9 @@ export class CipherViewComponent {
+     ifPremium$: () => Observable<T>,
+     ifNonPremium$: () => Observable<T>,
+   ): Observable<T> {
++    if (COMMUNITY_CLIENT_FEATURES.passwordRiskInsights) {
++      return ifPremium$();
++    }
+     if (!userId) {
+       return this.hasAnonymousPremium() ? ifPremium$() : ifNonPremium$();
+     }
+diff --git a/libs/vault/src/cipher-view/login-credentials/login-credentials-view.component.ts b/libs/vault/src/cipher-view/login-credentials/login-credentials-view.component.ts
+index 8e477aae74de7e8dc5320f0101b519abf91ccf6e..fd710c8a31f742659126665e60a9244772d0c820 100644
+--- a/libs/vault/src/cipher-view/login-credentials/login-credentials-view.component.ts
++++ b/libs/vault/src/cipher-view/login-credentials/login-credentials-view.component.ts
+@@ -14,11 +14,12 @@ import {
+   ViewChild,
+ } from "@angular/core";
+ import { toObservable } from "@angular/core/rxjs-interop";
+-import { Observable, switchMap } from "rxjs";
++import { map, Observable, switchMap } from "rxjs";
+ 
+ import { PremiumBadgeComponent } from "@bitwarden/angular/billing/components/premium-badge";
+ import { JslibModule } from "@bitwarden/angular/jslib.module";
+ import { BillingAccountProfileStateService } from "@bitwarden/common/billing/abstractions";
++import { COMMUNITY_CLIENT_FEATURES } from "@bitwarden/common/community/community-client-features";
+ import { EventCollectionService, EventType } from "@bitwarden/common/dirt/event-logs";
+ import { I18nService } from "@bitwarden/common/platform/abstractions/i18n.service";
+ import { UserId } from "@bitwarden/common/types/guid";
+@@ -87,9 +88,13 @@ export class LoginCredentialsViewComponent implements OnChanges {
+   isPremium$: Observable<boolean> = this.activeUserId$.pipe(
+     switchMap((userId) => {
+       if (userId) {
+-        return this.billingAccountProfileStateService.hasPremiumFromAnySource$(userId);
++        return this.billingAccountProfileStateService
++          .hasPremiumFromAnySource$(userId)
++          .pipe(map((hasPremium) => COMMUNITY_CLIENT_FEATURES.integratedTotp || hasPremium));
+       } else {
+-        return this.hasAnonymousPremium$;
++        return this.hasAnonymousPremium$.pipe(
++          map((hasPremium) => COMMUNITY_CLIENT_FEATURES.integratedTotp || hasPremium),
++        );
+       }
+     }),
+   );
+diff --git a/libs/vault/src/services/copy-cipher-field.service.spec.ts b/libs/vault/src/services/copy-cipher-field.service.spec.ts
+index 469f7756acd9270d87bcde4577e6ffe69bd61dc1..28852cd59c2e930990597bf522c2afad60d3c6a3 100644
+--- a/libs/vault/src/services/copy-cipher-field.service.spec.ts
++++ b/libs/vault/src/services/copy-cipher-field.service.spec.ts
+@@ -151,16 +151,14 @@ describe("CopyCipherFieldService", () => {
+         cipher.organizationUseTotp = false;
+       });
+ 
+-      it("should get TOTP code when allowed from premium", async () => {
++      it("should get TOTP code without requiring premium", async () => {
+         billingAccountProfileStateService.hasPremiumFromAnySource$.mockReturnValue(of(true));
+         totpService.getCode$.mockReturnValue(of({ code: "123456", period: 30 }));
+         const result = await service.copy(valueToCopy, actionType, cipher, skipReprompt);
+         expect(result).toBeTruthy();
+         expect(totpService.getCode$).toHaveBeenCalledWith(valueToCopy);
+         expect(platformUtilsService.copyToClipboard).toHaveBeenCalledWith("123456");
+-        expect(billingAccountProfileStateService.hasPremiumFromAnySource$).toHaveBeenCalledWith(
+-          userId,
+-        );
++        expect(billingAccountProfileStateService.hasPremiumFromAnySource$).not.toHaveBeenCalled();
+       });
+ 
+       it("should get TOTP code when allowed from organization", async () => {
+@@ -172,15 +170,14 @@ describe("CopyCipherFieldService", () => {
+         expect(platformUtilsService.copyToClipboard).toHaveBeenCalledWith("123456");
+       });
+ 
+-      it("should return early when the user is not allowed to use TOTP", async () => {
++      it("should get a TOTP code for a non-premium user", async () => {
+         billingAccountProfileStateService.hasPremiumFromAnySource$.mockReturnValue(of(false));
++        totpService.getCode$.mockReturnValue(of({ code: "123456", period: 30 }));
+         const result = await service.copy(valueToCopy, actionType, cipher, skipReprompt);
+-        expect(result).toBeFalsy();
+-        expect(totpService.getCode$).not.toHaveBeenCalled();
+-        expect(platformUtilsService.copyToClipboard).not.toHaveBeenCalled();
+-        expect(billingAccountProfileStateService.hasPremiumFromAnySource$).toHaveBeenCalledWith(
+-          userId,
+-        );
++        expect(result).toBeTruthy();
++        expect(totpService.getCode$).toHaveBeenCalledWith(valueToCopy);
++        expect(platformUtilsService.copyToClipboard).toHaveBeenCalledWith("123456");
++        expect(billingAccountProfileStateService.hasPremiumFromAnySource$).not.toHaveBeenCalled();
+       });
+ 
+       it("should return early when TOTP is not set", async () => {
+diff --git a/libs/vault/src/services/copy-cipher-field.service.ts b/libs/vault/src/services/copy-cipher-field.service.ts
+index c10513739600982d84828db5e4018a4f7f7a17cb..473151a5d9c73a0a7515b548a7098f4d32538a37 100644
+--- a/libs/vault/src/services/copy-cipher-field.service.ts
++++ b/libs/vault/src/services/copy-cipher-field.service.ts
+@@ -3,6 +3,7 @@ import { firstValueFrom } from "rxjs";
+ 
+ import { AccountService } from "@bitwarden/common/auth/abstractions/account.service";
+ import { BillingAccountProfileStateService } from "@bitwarden/common/billing/abstractions/account/billing-account-profile-state.service";
++import { COMMUNITY_CLIENT_FEATURES } from "@bitwarden/common/community/community-client-features";
+ import { EventCollectionService, EventType } from "@bitwarden/common/dirt/event-logs";
+ import { I18nService } from "@bitwarden/common/platform/abstractions/i18n.service";
+ import { PlatformUtilsService } from "@bitwarden/common/platform/abstractions/platform-utils.service";
+@@ -225,7 +226,8 @@ export class CopyCipherFieldService {
+ 
+     return (
+       !!login?.totp &&
+-      (cipher.organizationUseTotp ||
++      (COMMUNITY_CLIENT_FEATURES.integratedTotp ||
++        cipher.organizationUseTotp ||
+         (await firstValueFrom(
+           this.billingAccountProfileStateService.hasPremiumFromAnySource$(activeAccount.id),
+         )))
+diff --git a/libs/vault/src/vault-item-dialog/vault-item-dialog.component.ts b/libs/vault/src/vault-item-dialog/vault-item-dialog.component.ts
+index 5c964d2a85beb024af05612d2257c32644705085..86b2a4783f859550fe645f7b462e5325addcbf67 100644
+--- a/libs/vault/src/vault-item-dialog/vault-item-dialog.component.ts
++++ b/libs/vault/src/vault-item-dialog/vault-item-dialog.component.ts
+@@ -316,9 +316,9 @@ export class VaultItemDialogComponent implements OnInit, OnDestroy {
+   }
+ 
+   protected get submitButtonText$(): Observable<string> {
+-    return this.userHasPremium$.pipe(
+-      map((hasPremium) =>
+-        this.isCipherArchived && !hasPremium
++    return this.userCanArchive$.pipe(
++      map((canArchive) =>
++        this.isCipherArchived && !canArchive
+           ? this.i18nService.t("unArchiveAndSave")
+           : this.i18nService.t("save"),
+       ),
+diff --git a/package-lock.json b/package-lock.json
+index c053b483a088314d8e44feafcacc7c0d6177b8f6..f3e1d756c048b1203ed8c03c6b02c914239dedf9 100644
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -200,7 +200,7 @@
+     },
+     "apps/browser": {
+       "name": "@bitwarden/browser",
+-      "version": "2026.10.2"
++      "version": "1.0.0"
+     },
+     "apps/cli": {
+       "name": "@bitwarden/cli",
+@@ -245,7 +245,7 @@
+     },
+     "apps/desktop": {
+       "name": "@bitwarden/desktop",
+-      "version": "2026.10.3",
++      "version": "1.0.0",
+       "hasInstallScript": true,
+       "license": "GPL-3.0",
+       "dependencies": {

@@ -1,0 +1,3378 @@
+diff --git a/app/build.gradle.kts b/app/build.gradle.kts
+index b82ed0651e402dbede9e269adcf9b6de61d1ec4b..f6470c96cb253f90cb7e95efe29ade3d00b6b560 100644
+--- a/app/build.gradle.kts
++++ b/app/build.gradle.kts
+@@ -46,7 +46,7 @@ val ciProperties = Properties().apply {
+ base {
+     // Set the base archive name for publishing purposes. This is used to derive the
+     // APK and AAB artifact names when uploading to Firebase and Play Store.
+-    archivesName.set("com.x8bit.bitwarden")
++    archivesName.set("org.openwarden.app")
+ }
+ 
+ room3 {
+@@ -82,6 +82,11 @@ configure<ApplicationExtension> {
+             name = "SDK_VERSION",
+             value = "\"${libs.versions.bitwardenSdk.get()}\"",
+         )
++        buildConfigField(
++            type = "String",
++            name = "BITWARDEN_CLIENT_VERSION",
++            value = "\"${libs.versions.bitwardenClientVersion.get()}\"",
++        )
+     }
+ 
+     androidResources {
+@@ -146,6 +151,7 @@ configure<ApplicationExtension> {
+         }
+         create("fdroid") {
+             dimension = "mode"
++            applicationId = "org.openwarden.app"
+         }
+     }
+ 
+diff --git a/app/src/fdroidRelease/res/values/ic_launcher_background.xml b/app/src/fdroidRelease/res/values/ic_launcher_background.xml
+new file mode 100644
+index 0000000000000000000000000000000000000000..8d7e35193b0d6dac72ac3f4516454c72b51f0f30
+--- /dev/null
++++ b/app/src/fdroidRelease/res/values/ic_launcher_background.xml
+@@ -0,0 +1,4 @@
++<?xml version="1.0" encoding="utf-8"?>
++<resources>
++    <color name="ic_launcher_background">#FF111010</color>
++</resources>
+diff --git a/app/src/fdroidRelease/res/values/strings_non_localized.xml b/app/src/fdroidRelease/res/values/strings_non_localized.xml
+new file mode 100644
+index 0000000000000000000000000000000000000000..084223108a3763c88df43b41079d8aa47f7dc05a
+--- /dev/null
++++ b/app/src/fdroidRelease/res/values/strings_non_localized.xml
+@@ -0,0 +1,3 @@
++<resources>
++    <string name="app_name" translatable="false">OpenWarden</string>
++</resources>
+diff --git a/app/src/main/kotlin/com/x8bit/bitwarden/data/autofill/di/AutofillModule.kt b/app/src/main/kotlin/com/x8bit/bitwarden/data/autofill/di/AutofillModule.kt
+index cc06d2097ed961fe15b458a947a0d3257b4123a8..41ae7d9af2f590171a416cefb3923781cd556042 100644
+--- a/app/src/main/kotlin/com/x8bit/bitwarden/data/autofill/di/AutofillModule.kt
++++ b/app/src/main/kotlin/com/x8bit/bitwarden/data/autofill/di/AutofillModule.kt
+@@ -116,14 +116,12 @@ object AutofillModule {
+     fun providesAutofillTotpManager(
+         clock: Clock,
+         clipboardManager: BitwardenClipboardManager,
+-        authRepository: AuthRepository,
+         settingsRepository: SettingsRepository,
+         vaultRepository: VaultRepository,
+     ): AutofillTotpManager =
+         AutofillTotpManagerImpl(
+             clock = clock,
+             clipboardManager = clipboardManager,
+-            authRepository = authRepository,
+             settingsRepository = settingsRepository,
+             vaultRepository = vaultRepository,
+         )
+diff --git a/app/src/main/kotlin/com/x8bit/bitwarden/data/autofill/manager/AutofillTotpManagerImpl.kt b/app/src/main/kotlin/com/x8bit/bitwarden/data/autofill/manager/AutofillTotpManagerImpl.kt
+index a0f81a895ed30beb35c991b217c473d7ed7e1918..8802152a05036eb73fdb10a8a8349c27281b105b 100644
+--- a/app/src/main/kotlin/com/x8bit/bitwarden/data/autofill/manager/AutofillTotpManagerImpl.kt
++++ b/app/src/main/kotlin/com/x8bit/bitwarden/data/autofill/manager/AutofillTotpManagerImpl.kt
+@@ -3,7 +3,6 @@ package com.x8bit.bitwarden.data.autofill.manager
+ import com.bitwarden.ui.platform.resource.BitwardenString
+ import com.bitwarden.ui.util.asText
+ import com.bitwarden.vault.CipherView
+-import com.x8bit.bitwarden.data.auth.repository.AuthRepository
+ import com.x8bit.bitwarden.data.platform.manager.clipboard.BitwardenClipboardManager
+ import com.x8bit.bitwarden.data.platform.repository.SettingsRepository
+ import com.x8bit.bitwarden.data.vault.repository.VaultRepository
+@@ -16,14 +15,11 @@ import java.time.Clock
+ class AutofillTotpManagerImpl(
+     private val clock: Clock,
+     private val clipboardManager: BitwardenClipboardManager,
+-    private val authRepository: AuthRepository,
+     private val settingsRepository: SettingsRepository,
+     private val vaultRepository: VaultRepository,
+ ) : AutofillTotpManager {
+     override suspend fun tryCopyTotpToClipboard(cipherView: CipherView) {
+         if (settingsRepository.isAutoCopyTotpDisabled) return
+-        val isPremium = authRepository.userStateFlow.value?.activeAccount?.isPremium == true
+-        if (!isPremium && !cipherView.organizationUseTotp) return
+         cipherView.login?.totp ?: return
+         val cipherId = cipherView.id ?: return
+ 
+diff --git a/app/src/main/kotlin/com/x8bit/bitwarden/data/community/CommunityFeatureAccess.kt b/app/src/main/kotlin/com/x8bit/bitwarden/data/community/CommunityFeatureAccess.kt
+new file mode 100644
+index 0000000000000000000000000000000000000000..373ebae8c05df3f825df9a4b2b04fa6a9a7be768
+--- /dev/null
++++ b/app/src/main/kotlin/com/x8bit/bitwarden/data/community/CommunityFeatureAccess.kt
+@@ -0,0 +1,35 @@
++package com.x8bit.bitwarden.data.community
++
++/**
++ * Independent feature entitlements supplied by the community fork.
++ *
++ * These flags deliberately do not alter the subscription state received from a Bitwarden server.
++ */
++object CommunityFeatureAccess {
++    /** Device-local Archive overlay; this never calls Bitwarden's archive API. */
++    const val archive: Boolean = true
++
++    /** Attachment storage and transfer are authorized by the server. */
++    const val attachments: Boolean = false
++
++    /** File Sends require server-side storage and authorization. */
++    const val fileSends: Boolean = false
++
++    /** Recipient restrictions are enforced by the server. */
++    const val sendEmailRestrictions: Boolean = false
++
++    /** Allows integrated authenticator codes. */
++    const val totp: Boolean = true
++
++    /** Indicates whether all paid capabilities are available without server authorization. */
++    const val allPaidAndroidFeatures: Boolean = false
++
++    /** OpenWarden does not advertise Bitwarden subscriptions inside the client. */
++    const val showPremiumPromotions: Boolean = false
++
++    /** Returns whether archive is available from either community or server entitlement. */
++    fun canUseArchive(isPremium: Boolean): Boolean = archive || isPremium
++
++    /** Returns whether file Sends are available from either community or server entitlement. */
++    fun canUseFileSends(isPremium: Boolean): Boolean = fileSends || isPremium
++}
+diff --git a/app/src/main/kotlin/com/x8bit/bitwarden/data/platform/datasource/disk/SettingsDiskSource.kt b/app/src/main/kotlin/com/x8bit/bitwarden/data/platform/datasource/disk/SettingsDiskSource.kt
+index fff1df739b96c8d463e5f68a84df320b9c2a1f4e..9f48ec68d5b353d27792560a974719d492d993bf 100644
+--- a/app/src/main/kotlin/com/x8bit/bitwarden/data/platform/datasource/disk/SettingsDiskSource.kt
++++ b/app/src/main/kotlin/com/x8bit/bitwarden/data/platform/datasource/disk/SettingsDiskSource.kt
+@@ -135,6 +135,12 @@ interface SettingsDiskSource : FlightRecorderDiskSource {
+      */
+     fun getIntroducingArchiveActionCardDismissedFlow(userId: String): Flow<Boolean?>
+ 
++    /** Cipher IDs archived only on this device by the community client. */
++    fun getCommunityArchivedCipherIds(userId: String): Set<String>
++
++    /** Stores cipher IDs archived only on this device by the community client. */
++    fun storeCommunityArchivedCipherIds(userId: String, cipherIds: Set<String>?)
++
+     /**
+      * Retrieves the stored set of collapsed vault sections for the given [userId].
+      *
+diff --git a/app/src/main/kotlin/com/x8bit/bitwarden/data/platform/datasource/disk/SettingsDiskSourceImpl.kt b/app/src/main/kotlin/com/x8bit/bitwarden/data/platform/datasource/disk/SettingsDiskSourceImpl.kt
+index 047d6f766e322a2942d044aaf503760878129681..4fbefb05872c49fb81944f5ffbb3b6f3dd2de70d 100644
+--- a/app/src/main/kotlin/com/x8bit/bitwarden/data/platform/datasource/disk/SettingsDiskSourceImpl.kt
++++ b/app/src/main/kotlin/com/x8bit/bitwarden/data/platform/datasource/disk/SettingsDiskSourceImpl.kt
+@@ -54,6 +54,7 @@ private const val IS_DYNAMIC_COLORS_ENABLED = "isDynamicColorsEnabled"
+ private const val BROWSER_AUTOFILL_DIALOG_RESHOW_TIME = "browserAutofillDialogReshowTime"
+ private const val INTRODUCING_ARCHIVE_ACTION_CARD_DISMISSED =
+     "introducingArchiveActionCardDismissed"
++private const val COMMUNITY_ARCHIVED_CIPHER_IDS = "communityArchivedCipherIds"
+ private const val PREMIUM_UPGRADE_BANNER_DISMISSED = "premiumUpgradeBannerDismissed"
+ private const val COLLAPSED_VAULT_SECTIONS = "collapsedVaultSections"
+ private const val VAULT_POLICY_BANNER_DISMISSED_DATE = "vaultPolicyBannerDismissedDate"
+@@ -283,6 +284,7 @@ class SettingsDiskSourceImpl(
+         storeAppResumeScreen(userId = userId, screenData = null)
+         storeVaultPolicyBannerDismissedDate(userId = userId, dismissalRevisionDate = null)
+         storeCollapsedVaultSections(userId = userId, collapsedVaultSections = null)
++        storeCommunityArchivedCipherIds(userId = userId, cipherIds = null)
+ 
+         // The following are intentionally not cleared so they can be
+         // restored after logging out and back in:
+@@ -319,6 +321,18 @@ class SettingsDiskSourceImpl(
+         getMutableIntroducingArchiveActionCardDismissedFlow(userId = userId)
+             .onSubscription { emit(getIntroducingArchiveActionCardDismissed(userId = userId)) }
+ 
++    override fun getCommunityArchivedCipherIds(userId: String): Set<String> =
++        getString(key = COMMUNITY_ARCHIVED_CIPHER_IDS.appendIdentifier(identifier = userId))
++            ?.let { json.decodeFromStringOrNull<Set<String>>(it) }
++            .orEmpty()
++
++    override fun storeCommunityArchivedCipherIds(userId: String, cipherIds: Set<String>?) {
++        putString(
++            key = COMMUNITY_ARCHIVED_CIPHER_IDS.appendIdentifier(identifier = userId),
++            value = cipherIds?.takeIf { it.isNotEmpty() }?.let(json::encodeToString),
++        )
++    }
++
+     override fun getCollapsedVaultSections(userId: String): Set<VaultSection>? =
+         getString(key = COLLAPSED_VAULT_SECTIONS.appendIdentifier(identifier = userId))
+             ?.let { json.decodeFromStringOrNull<Set<String>>(it) }
+diff --git a/app/src/main/kotlin/com/x8bit/bitwarden/data/platform/datasource/network/util/HeaderUtils.kt b/app/src/main/kotlin/com/x8bit/bitwarden/data/platform/datasource/network/util/HeaderUtils.kt
+index 4665db9c2d4f276303d607d8bc2fea8c1aa7cf4d..69fe9a4f8549e6106392553309b050a2516660f6 100644
+--- a/app/src/main/kotlin/com/x8bit/bitwarden/data/platform/datasource/network/util/HeaderUtils.kt
++++ b/app/src/main/kotlin/com/x8bit/bitwarden/data/platform/datasource/network/util/HeaderUtils.kt
+@@ -8,7 +8,7 @@ import com.x8bit.bitwarden.BuildConfig
+  */
+ @Suppress("MaxLineLength")
+ val HEADER_VALUE_USER_AGENT: String =
+-    "Bitwarden_Mobile/${BuildConfig.VERSION_NAME} (${BuildConfig.BUILD_TYPE}/${BuildConfig.FLAVOR}) (Android ${Build.VERSION.RELEASE}; SDK ${Build.VERSION.SDK_INT}; Model ${Build.MODEL})"
++    "Bitwarden_Mobile/${BuildConfig.BITWARDEN_CLIENT_VERSION} OpenWarden/${BuildConfig.VERSION_NAME} (${BuildConfig.BUILD_TYPE}/${BuildConfig.FLAVOR}) (Android ${Build.VERSION.RELEASE}; SDK ${Build.VERSION.SDK_INT}; Model ${Build.MODEL})"
+ 
+ /**
+  * The value used for the 'bitwarden-client-name' headers.
+@@ -18,4 +18,4 @@ const val HEADER_VALUE_CLIENT_NAME: String = "mobile"
+ /**
+  * The value used for the 'bitwarden-client-version' headers.
+  */
+-const val HEADER_VALUE_CLIENT_VERSION: String = BuildConfig.VERSION_NAME
++const val HEADER_VALUE_CLIENT_VERSION: String = BuildConfig.BITWARDEN_CLIENT_VERSION
+diff --git a/app/src/main/kotlin/com/x8bit/bitwarden/data/vault/datasource/disk/VaultDiskSourceImpl.kt b/app/src/main/kotlin/com/x8bit/bitwarden/data/vault/datasource/disk/VaultDiskSourceImpl.kt
+index 6e1e5cc1d7f71d033b7ef2cf1200b2ab8ac785a0..bb4478532232b5d5a465c27fbc805629750b6072 100644
+--- a/app/src/main/kotlin/com/x8bit/bitwarden/data/vault/datasource/disk/VaultDiskSourceImpl.kt
++++ b/app/src/main/kotlin/com/x8bit/bitwarden/data/vault/datasource/disk/VaultDiskSourceImpl.kt
+@@ -4,6 +4,7 @@ import com.bitwarden.core.data.manager.dispatcher.DispatcherManager
+ import com.bitwarden.core.data.repository.util.bufferedMutableSharedFlow
+ import com.bitwarden.core.data.util.decodeFromStringWithErrorCallback
+ import com.bitwarden.network.model.SyncResponseJson
++import com.x8bit.bitwarden.data.platform.datasource.disk.SettingsDiskSource
+ import com.x8bit.bitwarden.data.vault.datasource.disk.dao.CiphersDao
+ import com.x8bit.bitwarden.data.vault.datasource.disk.dao.CollectionsDao
+ import com.x8bit.bitwarden.data.vault.datasource.disk.dao.DomainsDao
+@@ -25,6 +26,7 @@ import kotlinx.coroutines.launch
+ import kotlinx.coroutines.withContext
+ import kotlinx.serialization.json.Json
+ import timber.log.Timber
++import java.time.Instant
+ 
+ /**
+  * Default implementation of [VaultDiskSource].
+@@ -38,6 +40,7 @@ class VaultDiskSourceImpl(
+     private val sendsDao: SendsDao,
+     private val json: Json,
+     private val dispatcherManager: DispatcherManager,
++    private val settingsDiskSource: SettingsDiskSource,
+ ) : VaultDiskSource {
+ 
+     private val forceCiphersFlow = bufferedMutableSharedFlow<List<SyncResponseJson.Cipher>>()
+@@ -68,6 +71,7 @@ class VaultDiskSourceImpl(
+             ciphersDao
+                 .getAllCiphersFlow(userId = userId)
+                 .map { entities ->
++                    val archivedIds = settingsDiskSource.getCommunityArchivedCipherIds(userId)
+                     withContext(context = dispatcherManager.default) {
+                         entities
+                             .map { entity ->
+@@ -75,6 +79,7 @@ class VaultDiskSourceImpl(
+                                     json.decodeFromStringWithErrorCallback<SyncResponseJson.Cipher>(
+                                         string = entity.cipherJson,
+                                     ) { Timber.e(it, "Failed to deserialize Cipher in Vault") }
++                                        .withCommunityArchive(archivedIds)
+                                 }
+                             }
+                             .awaitAll()
+@@ -84,6 +89,7 @@ class VaultDiskSourceImpl(
+ 
+     override suspend fun getCiphers(userId: String): List<SyncResponseJson.Cipher> {
+         val entities = ciphersDao.getAllCiphers(userId = userId)
++        val archivedIds = settingsDiskSource.getCommunityArchivedCipherIds(userId)
+         return withContext(context = dispatcherManager.default) {
+             entities
+                 .map { entity ->
+@@ -91,6 +97,7 @@ class VaultDiskSourceImpl(
+                         json.decodeFromStringWithErrorCallback<SyncResponseJson.Cipher>(
+                             string = entity.cipherJson,
+                         ) { Timber.e(it, "Failed to deserialize Cipher in Vault") }
++                            .withCommunityArchive(archivedIds)
+                     }
+                 }
+                 .awaitAll()
+@@ -105,6 +112,7 @@ class VaultDiskSourceImpl(
+         cipherIds: List<String>,
+     ): List<SyncResponseJson.Cipher> {
+         val entities = ciphersDao.getSelectedCiphers(userId = userId, cipherIds = cipherIds)
++        val archivedIds = settingsDiskSource.getCommunityArchivedCipherIds(userId)
+         return withContext(context = dispatcherManager.default) {
+             entities
+                 .map { entity ->
+@@ -112,6 +120,7 @@ class VaultDiskSourceImpl(
+                         json.decodeFromStringWithErrorCallback<SyncResponseJson.Cipher>(
+                             string = entity.cipherJson,
+                         ) { Timber.e(it, "Failed to deserialize Cipher in Vault") }
++                            .withCommunityArchive(archivedIds)
+                     }
+                 }
+                 .awaitAll()
+@@ -120,6 +129,7 @@ class VaultDiskSourceImpl(
+ 
+     override suspend fun getLoginCiphers(userId: String): List<SyncResponseJson.Cipher> {
+         val entities = ciphersDao.getAllLoginCiphers(userId = userId)
++        val archivedIds = settingsDiskSource.getCommunityArchivedCipherIds(userId)
+         return withContext(context = dispatcherManager.default) {
+             entities
+                 .map { entity ->
+@@ -127,6 +137,7 @@ class VaultDiskSourceImpl(
+                         json.decodeFromStringWithErrorCallback<SyncResponseJson.Cipher>(
+                             string = entity.cipherJson,
+                         ) { Timber.e(it, "Failed to deserialize TOTP Cipher in Vault") }
++                            .withCommunityArchive(archivedIds)
+                     }
+                 }
+                 .awaitAll()
+@@ -144,11 +155,27 @@ class VaultDiskSourceImpl(
+                     json.decodeFromStringWithErrorCallback<SyncResponseJson.Cipher>(
+                         string = entity.cipherJson,
+                     ) { Timber.e(it, "Failed to deserialize Cipher in Vault") }
++                        .withCommunityArchive(
++                            settingsDiskSource.getCommunityArchivedCipherIds(userId),
++                        )
+                 }
+             }
+ 
++    private fun SyncResponseJson.Cipher.withCommunityArchive(
++        archivedIds: Set<String>,
++    ): SyncResponseJson.Cipher =
++        if (archivedDate == null && id in archivedIds) {
++            copy(archivedDate = Instant.EPOCH)
++        } else {
++            this
++        }
++
+     override suspend fun deleteCipher(userId: String, cipherId: String) {
+         ciphersDao.deleteCipher(userId, cipherId)
++        settingsDiskSource.storeCommunityArchivedCipherIds(
++            userId = userId,
++            cipherIds = settingsDiskSource.getCommunityArchivedCipherIds(userId) - cipherId,
++        )
+     }
+ 
+     override suspend fun saveCiphers(
+@@ -170,10 +197,16 @@ class VaultDiskSourceImpl(
+ 
+     override suspend fun deleteSelectedCiphers(userId: String, cipherIds: List<String>) {
+         ciphersDao.deleteSelectedCiphers(userId = userId, cipherIds = cipherIds)
++        settingsDiskSource.storeCommunityArchivedCipherIds(
++            userId = userId,
++            cipherIds = settingsDiskSource
++                .getCommunityArchivedCipherIds(userId) - cipherIds.toSet(),
++        )
+     }
+ 
+     override suspend fun deleteAllCiphers(userId: String) {
+         ciphersDao.deleteAllCiphers(userId = userId)
++        settingsDiskSource.storeCommunityArchivedCipherIds(userId = userId, cipherIds = null)
+     }
+ 
+     override suspend fun saveCollection(userId: String, collection: SyncResponseJson.Collection) {
+@@ -353,6 +386,13 @@ class VaultDiskSourceImpl(
+         userId: String,
+         vault: SyncResponseJson,
+     ) {
++        val availableCipherIds = vault.ciphers.orEmpty().mapTo(mutableSetOf()) { it.id }
++        settingsDiskSource.storeCommunityArchivedCipherIds(
++            userId = userId,
++            cipherIds = settingsDiskSource
++                .getCommunityArchivedCipherIds(userId)
++                .intersect(availableCipherIds),
++        )
+         coroutineScope {
+             val deferredCiphers = async {
+                 ciphersDao.replaceAllCiphers(
+diff --git a/app/src/main/kotlin/com/x8bit/bitwarden/data/vault/datasource/disk/di/VaultDiskModule.kt b/app/src/main/kotlin/com/x8bit/bitwarden/data/vault/datasource/disk/di/VaultDiskModule.kt
+index c1f9e5723d7dc73b7d1d712a76a848aafe99afba..b1ff5cd79d4a0b3e814c2fea313156aff2a078d9 100644
+--- a/app/src/main/kotlin/com/x8bit/bitwarden/data/vault/datasource/disk/di/VaultDiskModule.kt
++++ b/app/src/main/kotlin/com/x8bit/bitwarden/data/vault/datasource/disk/di/VaultDiskModule.kt
+@@ -4,6 +4,7 @@ import android.app.Application
+ import androidx.room3.Room
+ import androidx.sqlite.driver.AndroidSQLiteDriver
+ import com.bitwarden.core.data.manager.dispatcher.DispatcherManager
++import com.x8bit.bitwarden.data.platform.datasource.disk.SettingsDiskSource
+ import com.x8bit.bitwarden.data.platform.manager.DatabaseSchemeManager
+ import com.x8bit.bitwarden.data.vault.datasource.disk.VaultDiskSource
+ import com.x8bit.bitwarden.data.vault.datasource.disk.VaultDiskSourceImpl
+@@ -73,6 +74,7 @@ class VaultDiskModule {
+         sendsDao: SendsDao,
+         json: Json,
+         dispatcherManager: DispatcherManager,
++        settingsDiskSource: SettingsDiskSource,
+     ): VaultDiskSource = VaultDiskSourceImpl(
+         ciphersDao = ciphersDao,
+         collectionsDao = collectionsDao,
+@@ -81,5 +83,6 @@ class VaultDiskModule {
+         sendsDao = sendsDao,
+         json = json,
+         dispatcherManager = dispatcherManager,
++        settingsDiskSource = settingsDiskSource,
+     )
+ }
+diff --git a/app/src/main/kotlin/com/x8bit/bitwarden/data/vault/manager/CipherManagerImpl.kt b/app/src/main/kotlin/com/x8bit/bitwarden/data/vault/manager/CipherManagerImpl.kt
+index 90ed461bdf2f86322dcf0ec39421f8e196ab0c3c..c7e61ec6e51253a4be780724ae365541b93064d8 100644
+--- a/app/src/main/kotlin/com/x8bit/bitwarden/data/vault/manager/CipherManagerImpl.kt
++++ b/app/src/main/kotlin/com/x8bit/bitwarden/data/vault/manager/CipherManagerImpl.kt
+@@ -22,6 +22,7 @@ import com.bitwarden.vault.AttachmentView
+ import com.bitwarden.vault.CipherView
+ import com.bitwarden.vault.EncryptionContext
+ import com.x8bit.bitwarden.data.auth.datasource.disk.AuthDiskSource
++import com.x8bit.bitwarden.data.community.CommunityFeatureAccess
+ import com.x8bit.bitwarden.data.platform.datasource.disk.SettingsDiskSource
+ import com.x8bit.bitwarden.data.platform.error.NoActiveUserException
+ import com.x8bit.bitwarden.data.platform.manager.PushManager
+@@ -66,6 +67,7 @@ class CipherManagerImpl(
+     private val vaultSdkSource: VaultSdkSource,
+     private val clock: Clock,
+     private val reviewPromptManager: ReviewPromptManager,
++    private val communityArchiveEnabled: Boolean = CommunityFeatureAccess.archive,
+     dispatcherManager: DispatcherManager,
+     pushManager: PushManager,
+ ) : CipherManager {
+@@ -169,6 +171,18 @@ class CipherManagerImpl(
+     ): ArchiveCipherResult {
+         val userId = activeUserId
+             ?: return ArchiveCipherResult.Error(error = NoActiveUserException())
++        if (communityArchiveEnabled) {
++            settingsDiskSource.storeCommunityArchivedCipherIds(
++                userId = userId,
++                cipherIds = settingsDiskSource.getCommunityArchivedCipherIds(userId) + cipherId,
++            )
++            settingsDiskSource.storeIntroducingArchiveActionCardDismissed(
++                userId = userId,
++                isDismissed = true,
++            )
++            vaultDiskSource.resyncVaultData(userId = userId)
++            return ArchiveCipherResult.Success
++        }
+         return ciphersService
+             .archiveCipher(cipherId = cipherId)
+             .flatMap { response ->
+@@ -205,6 +219,14 @@ class CipherManagerImpl(
+     ): UnarchiveCipherResult {
+         val userId = activeUserId
+             ?: return UnarchiveCipherResult.Error(error = NoActiveUserException())
++        if (communityArchiveEnabled) {
++            settingsDiskSource.storeCommunityArchivedCipherIds(
++                userId = userId,
++                cipherIds = settingsDiskSource.getCommunityArchivedCipherIds(userId) - cipherId,
++            )
++            vaultDiskSource.resyncVaultData(userId = userId)
++            return UnarchiveCipherResult.Success
++        }
+         return ciphersService
+             .unarchiveCipher(cipherId = cipherId)
+             .flatMap { response ->
+diff --git a/app/src/main/kotlin/com/x8bit/bitwarden/data/vault/repository/VaultRepository.kt b/app/src/main/kotlin/com/x8bit/bitwarden/data/vault/repository/VaultRepository.kt
+index e119ff8e81629119df1571291c55da121cb8ccb6..e5bc02bb5389de865d97cd4c8c10674e4c3d2d6f 100644
+--- a/app/src/main/kotlin/com/x8bit/bitwarden/data/vault/repository/VaultRepository.kt
++++ b/app/src/main/kotlin/com/x8bit/bitwarden/data/vault/repository/VaultRepository.kt
+@@ -142,8 +142,7 @@ interface VaultRepository :
+     /**
+      * Returns the IDs of ciphers with a valid TOTP secret for the active user. The vault filter
+      * is intentionally not applied here; callers intersect the result with their already-filtered
+-     * cipher list so the count stays correct when the filter changes. For non-premium users only
+-     * org-TOTP ciphers are included.
++     * cipher list so the count stays correct when the filter changes.
+      */
+     suspend fun getValidTotpCipherIds(isPremium: Boolean, time: Instant): Set<String>
+ 
+diff --git a/app/src/main/kotlin/com/x8bit/bitwarden/data/vault/repository/VaultRepositoryImpl.kt b/app/src/main/kotlin/com/x8bit/bitwarden/data/vault/repository/VaultRepositoryImpl.kt
+index 8176da8531fa4aa5dd3eb89175d5233425a07b02..66ffa2e62ee7f280480a2baf6e945521025ce35a 100644
+--- a/app/src/main/kotlin/com/x8bit/bitwarden/data/vault/repository/VaultRepositoryImpl.kt
++++ b/app/src/main/kotlin/com/x8bit/bitwarden/data/vault/repository/VaultRepositoryImpl.kt
+@@ -456,6 +456,7 @@ internal class VaultRepositoryImpl(
+             )
+     }
+ 
++    @Suppress("UnusedParameter")
+     override suspend fun getValidTotpCipherIds(isPremium: Boolean, time: Instant): Set<String> {
+         val userId = activeUserId ?: return emptySet()
+         val candidates = decryptCipherListResultStateFlow
+@@ -471,14 +472,13 @@ internal class VaultRepositoryImpl(
+ 
+         return candidates
+             .filter { cipher ->
+-                (isPremium || cipher.organizationUseTotp) &&
+-                    vaultSdkSource
+-                        .generateTotpForCipherListView(
+-                            userId = userId,
+-                            cipherListView = cipher,
+-                            time = time,
+-                        )
+-                        .isSuccess
++                vaultSdkSource
++                    .generateTotpForCipherListView(
++                        userId = userId,
++                        cipherListView = cipher,
++                        time = time,
++                    )
++                    .isSuccess
+             }
+             .mapNotNull { it.id }
+             .toSet()
+diff --git a/app/src/main/kotlin/com/x8bit/bitwarden/ui/auth/feature/landing/LandingScreen.kt b/app/src/main/kotlin/com/x8bit/bitwarden/ui/auth/feature/landing/LandingScreen.kt
+index 122c94def48e112ce460a097823fca2d12bfd64d..4cd7a7c1b85e12c2c0f79714ca625ba8978279c2 100644
+--- a/app/src/main/kotlin/com/x8bit/bitwarden/ui/auth/feature/landing/LandingScreen.kt
++++ b/app/src/main/kotlin/com/x8bit/bitwarden/ui/auth/feature/landing/LandingScreen.kt
+@@ -1,7 +1,6 @@
+ package com.x8bit.bitwarden.ui.auth.feature.landing
+ 
+ import androidx.compose.animation.AnimatedVisibility
+-import androidx.compose.foundation.Image
+ import androidx.compose.foundation.layout.Arrangement
+ import androidx.compose.foundation.layout.Column
+ import androidx.compose.foundation.layout.PaddingValues
+@@ -55,6 +54,7 @@ import com.bitwarden.ui.platform.resource.BitwardenDrawable
+ import com.bitwarden.ui.platform.resource.BitwardenString
+ import com.bitwarden.ui.platform.theme.BitwardenTheme
+ import com.x8bit.bitwarden.ui.platform.components.dropdown.EnvironmentSelector
++import com.x8bit.bitwarden.ui.platform.components.OpenWardenLogo
+ 
+ /**
+  * The top level composable for the Landing screen.
+@@ -197,9 +197,7 @@ private fun LandingScreenContent(
+         Spacer(modifier = Modifier.height(height = 12.dp))
+         Spacer(modifier = Modifier.weight(1f))
+ 
+-        Image(
+-            painter = rememberVectorPainter(id = BitwardenDrawable.logo_bitwarden),
+-            contentDescription = null,
++        OpenWardenLogo(
+             modifier = Modifier
+                 .standardHorizontalMargin()
+                 .fillMaxWidth(),
+diff --git a/app/src/main/kotlin/com/x8bit/bitwarden/ui/auth/feature/startregistration/StartRegistrationScreen.kt b/app/src/main/kotlin/com/x8bit/bitwarden/ui/auth/feature/startregistration/StartRegistrationScreen.kt
+index da4efecc8a73e2bba682b8bae9193b17bd7fe118..7976d4f77c12cacc16f3f3371643091b190b567e 100644
+--- a/app/src/main/kotlin/com/x8bit/bitwarden/ui/auth/feature/startregistration/StartRegistrationScreen.kt
++++ b/app/src/main/kotlin/com/x8bit/bitwarden/ui/auth/feature/startregistration/StartRegistrationScreen.kt
+@@ -1,6 +1,5 @@
+ package com.x8bit.bitwarden.ui.auth.feature.startregistration
+ 
+-import androidx.compose.foundation.Image
+ import androidx.compose.foundation.layout.Arrangement
+ import androidx.compose.foundation.layout.Column
+ import androidx.compose.foundation.layout.PaddingValues
+@@ -62,6 +61,7 @@ import com.x8bit.bitwarden.ui.auth.feature.startregistration.StartRegistrationEv
+ import com.x8bit.bitwarden.ui.auth.feature.startregistration.handlers.StartRegistrationHandler
+ import com.x8bit.bitwarden.ui.auth.feature.startregistration.handlers.rememberStartRegistrationHandler
+ import com.x8bit.bitwarden.ui.platform.components.dropdown.EnvironmentSelector
++import com.x8bit.bitwarden.ui.platform.components.OpenWardenLogo
+ 
+ /**
+  * Top level composable for the start registration screen.
+@@ -174,9 +174,7 @@ private fun StartRegistrationContent(
+         Spacer(modifier = Modifier.height(height = 12.dp))
+ 
+         Spacer(modifier = Modifier.weight(1f))
+-        Image(
+-            painter = rememberVectorPainter(id = BitwardenDrawable.logo_bitwarden),
+-            contentDescription = null,
++        OpenWardenLogo(
+             modifier = Modifier
+                 .standardHorizontalMargin()
+                 .fillMaxWidth(),
+diff --git a/app/src/main/kotlin/com/x8bit/bitwarden/ui/platform/components/OpenWardenLogo.kt b/app/src/main/kotlin/com/x8bit/bitwarden/ui/platform/components/OpenWardenLogo.kt
+new file mode 100644
+index 0000000000000000000000000000000000000000..d9c2e2d57cef8e26222023ce7f1d09add47d9432
+--- /dev/null
++++ b/app/src/main/kotlin/com/x8bit/bitwarden/ui/platform/components/OpenWardenLogo.kt
+@@ -0,0 +1,45 @@
++package com.x8bit.bitwarden.ui.platform.components
++
++import androidx.compose.foundation.Image
++import androidx.compose.foundation.layout.Arrangement
++import androidx.compose.foundation.layout.Row
++import androidx.compose.foundation.layout.Spacer
++import androidx.compose.foundation.layout.fillMaxWidth
++import androidx.compose.foundation.layout.size
++import androidx.compose.foundation.layout.width
++import androidx.compose.material3.Text
++import androidx.compose.runtime.Composable
++import androidx.compose.ui.Alignment
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.res.stringResource
++import androidx.compose.ui.unit.dp
++import com.bitwarden.ui.platform.components.util.rememberVectorPainter
++import com.bitwarden.ui.platform.resource.BitwardenDrawable
++import com.bitwarden.ui.platform.resource.BitwardenString
++import com.bitwarden.ui.platform.theme.BitwardenTheme
++
++/** OpenWarden wordmark using the Bitwarden-compatible shield and community palette. */
++@Composable
++fun OpenWardenLogo(
++    modifier: Modifier = Modifier,
++) {
++    Row(
++        horizontalArrangement = Arrangement.Center,
++        verticalAlignment = Alignment.CenterVertically,
++        modifier = modifier.fillMaxWidth(),
++    ) {
++        Image(
++            painter = rememberVectorPainter(BitwardenDrawable.logo_shield_icon),
++            contentDescription = null,
++            modifier = Modifier.size(OPENWARDEN_SHIELD_SIZE_DP.dp),
++        )
++        Spacer(Modifier.width(12.dp))
++        Text(
++            text = stringResource(BitwardenString.openwarden),
++            style = BitwardenTheme.typography.headlineLarge,
++            color = BitwardenTheme.colorScheme.text.primary,
++        )
++    }
++}
++
++private const val OPENWARDEN_SHIELD_SIZE_DP = 52
+diff --git a/app/src/main/kotlin/com/x8bit/bitwarden/ui/platform/feature/premium/plan/OpenWardenCommunityScreen.kt b/app/src/main/kotlin/com/x8bit/bitwarden/ui/platform/feature/premium/plan/OpenWardenCommunityScreen.kt
+new file mode 100644
+index 0000000000000000000000000000000000000000..b9931dda03408c7e0ae680ff744db75295c14a05
+--- /dev/null
++++ b/app/src/main/kotlin/com/x8bit/bitwarden/ui/platform/feature/premium/plan/OpenWardenCommunityScreen.kt
+@@ -0,0 +1,147 @@
++package com.x8bit.bitwarden.ui.platform.feature.premium.plan
++
++import androidx.compose.foundation.layout.Column
++import androidx.compose.foundation.layout.Row
++import androidx.compose.foundation.layout.Spacer
++import androidx.compose.foundation.layout.fillMaxSize
++import androidx.compose.foundation.layout.fillMaxWidth
++import androidx.compose.foundation.layout.height
++import androidx.compose.foundation.layout.navigationBarsPadding
++import androidx.compose.foundation.layout.padding
++import androidx.compose.foundation.layout.width
++import androidx.compose.foundation.rememberScrollState
++import androidx.compose.foundation.verticalScroll
++import androidx.compose.material3.ExperimentalMaterial3Api
++import androidx.compose.material3.Icon
++import androidx.compose.material3.Text
++import androidx.compose.material3.TopAppBarDefaults
++import androidx.compose.material3.rememberTopAppBarState
++import androidx.compose.runtime.Composable
++import androidx.compose.ui.Alignment
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.input.nestedscroll.nestedScroll
++import androidx.compose.ui.res.stringResource
++import androidx.compose.ui.unit.dp
++import com.bitwarden.ui.platform.base.util.standardHorizontalMargin
++import com.bitwarden.ui.platform.components.appbar.BitwardenTopAppBar
++import com.bitwarden.ui.platform.components.card.BitwardenInfoCalloutCard
++import com.bitwarden.ui.platform.components.icon.model.IconData
++import com.bitwarden.ui.platform.components.scaffold.BitwardenScaffold
++import com.bitwarden.ui.platform.components.util.rememberVectorPainter
++import com.bitwarden.ui.platform.resource.BitwardenDrawable
++import com.bitwarden.ui.platform.resource.BitwardenString
++import com.bitwarden.ui.platform.theme.BitwardenTheme
++
++/** Describes the independent, device-local capabilities included with OpenWarden. */
++@OptIn(ExperimentalMaterial3Api::class)
++@Composable
++fun OpenWardenCommunityScreen(
++    onNavigateBack: () -> Unit,
++) {
++    val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior(rememberTopAppBarState())
++    BitwardenScaffold(
++        modifier = Modifier
++            .fillMaxSize()
++            .nestedScroll(scrollBehavior.nestedScrollConnection),
++        topBar = {
++            BitwardenTopAppBar(
++                title = stringResource(BitwardenString.openwarden),
++                scrollBehavior = scrollBehavior,
++                navigationIcon = rememberVectorPainter(BitwardenDrawable.ic_back),
++                navigationIconContentDescription = stringResource(BitwardenString.back),
++                onNavigationIconClick = onNavigateBack,
++            )
++        },
++    ) { OpenWardenCommunityContent() }
++}
++
++@Composable
++private fun OpenWardenCommunityContent() {
++    Column(
++        modifier = Modifier
++            .fillMaxSize()
++            .verticalScroll(rememberScrollState()),
++    ) {
++        Spacer(Modifier.height(16.dp))
++        Text(
++            text = stringResource(BitwardenString.openwarden_community_edition_version),
++            style = BitwardenTheme.typography.labelLarge,
++            color = BitwardenTheme.colorScheme.text.secondary,
++            modifier = Modifier.standardHorizontalMargin(),
++        )
++        Spacer(Modifier.height(12.dp))
++        Text(
++            text = stringResource(BitwardenString.openwarden_intro),
++            style = BitwardenTheme.typography.bodyMedium,
++            color = BitwardenTheme.colorScheme.text.primary,
++            modifier = Modifier.standardHorizontalMargin(),
++        )
++        Spacer(Modifier.height(24.dp))
++        Text(
++            text = stringResource(BitwardenString.included_with_openwarden),
++            style = BitwardenTheme.typography.titleMedium,
++            color = BitwardenTheme.colorScheme.text.primary,
++            modifier = Modifier.standardHorizontalMargin(),
++        )
++        Spacer(Modifier.height(8.dp))
++        OPENWARDEN_FEATURES.forEach { feature ->
++            OpenWardenFeatureRow(text = stringResource(feature))
++        }
++        Spacer(Modifier.height(16.dp))
++        BitwardenInfoCalloutCard(
++            text = stringResource(BitwardenString.openwarden_compatibility_notice),
++            startIcon = IconData.Local(BitwardenDrawable.ic_info_circle),
++            modifier = Modifier
++                .standardHorizontalMargin()
++                .fillMaxWidth(),
++        )
++        Spacer(Modifier.height(12.dp))
++        BitwardenInfoCalloutCard(
++            text = stringResource(BitwardenString.openwarden_independent_project_notice),
++            startIcon = IconData.Local(BitwardenDrawable.ic_shield),
++            modifier = Modifier
++                .standardHorizontalMargin()
++                .fillMaxWidth(),
++        )
++        Spacer(Modifier.height(16.dp))
++        Spacer(Modifier.navigationBarsPadding())
++    }
++}
++
++@Composable
++private fun OpenWardenFeatureRow(
++    text: String,
++) {
++    Row(
++        verticalAlignment = Alignment.CenterVertically,
++        modifier = Modifier
++            .fillMaxWidth()
++            .standardHorizontalMargin()
++            .padding(vertical = 8.dp),
++    ) {
++        Icon(
++            painter = rememberVectorPainter(BitwardenDrawable.ic_check_mark),
++            contentDescription = null,
++            tint = BitwardenTheme.colorScheme.icon.primary,
++        )
++        Spacer(Modifier.width(12.dp))
++        Text(
++            text = text,
++            style = BitwardenTheme.typography.bodyMedium,
++            color = BitwardenTheme.colorScheme.text.primary,
++        )
++    }
++}
++
++private val OPENWARDEN_FEATURES = listOf(
++    BitwardenString.openwarden_feature_totp,
++    BitwardenString.openwarden_feature_vault_health,
++    BitwardenString.openwarden_feature_password_checks,
++    BitwardenString.openwarden_feature_breach_monitoring,
++    BitwardenString.openwarden_feature_phishing_warnings,
++    BitwardenString.openwarden_feature_two_factor_insights,
++    BitwardenString.openwarden_feature_unsecured_websites,
++    BitwardenString.openwarden_feature_local_archive,
++    BitwardenString.openwarden_feature_password_guidance,
++    BitwardenString.openwarden_feature_no_subscription,
++)
+diff --git a/app/src/main/kotlin/com/x8bit/bitwarden/ui/platform/feature/premium/plan/PlanNavigation.kt b/app/src/main/kotlin/com/x8bit/bitwarden/ui/platform/feature/premium/plan/PlanNavigation.kt
+index ff651552ba476a737822f222ff2ddbcd7e01c028..2cf474085ce208a5715eb640fba9504bd0d6d1a3 100644
+--- a/app/src/main/kotlin/com/x8bit/bitwarden/ui/platform/feature/premium/plan/PlanNavigation.kt
++++ b/app/src/main/kotlin/com/x8bit/bitwarden/ui/platform/feature/premium/plan/PlanNavigation.kt
+@@ -77,13 +77,9 @@ fun SavedStateHandle.toPlanArgs(): PlanArgs {
+  */
+ fun NavGraphBuilder.planDestination(
+     onNavigateBack: () -> Unit,
+-    onNavigateToUpgradedToPremium: () -> Unit,
+ ) {
+     composableWithPushTransitions<PlanRoute.Standard> {
+-        PlanScreen(
+-            onNavigateBack = onNavigateBack,
+-            onNavigateToUpgradedToPremium = onNavigateToUpgradedToPremium,
+-        )
++        OpenWardenCommunityScreen(onNavigateBack = onNavigateBack)
+     }
+ }
+ 
+@@ -92,13 +88,9 @@ fun NavGraphBuilder.planDestination(
+  */
+ fun NavGraphBuilder.planModalDestination(
+     onNavigateBack: () -> Unit,
+-    onNavigateToUpgradedToPremium: () -> Unit,
+ ) {
+     composableWithSlideTransitions<PlanRoute.Modal> {
+-        PlanScreen(
+-            onNavigateBack = onNavigateBack,
+-            onNavigateToUpgradedToPremium = onNavigateToUpgradedToPremium,
+-        )
++        OpenWardenCommunityScreen(onNavigateBack = onNavigateBack)
+     }
+ }
+ 
+diff --git a/app/src/main/kotlin/com/x8bit/bitwarden/ui/platform/feature/search/SearchViewModel.kt b/app/src/main/kotlin/com/x8bit/bitwarden/ui/platform/feature/search/SearchViewModel.kt
+index 305d1a3eafad9e9b7f238320b0ecc5edfb76d7db..12cc8dc279f2a47d74acf74f15ca3c164da4713f 100644
+--- a/app/src/main/kotlin/com/x8bit/bitwarden/ui/platform/feature/search/SearchViewModel.kt
++++ b/app/src/main/kotlin/com/x8bit/bitwarden/ui/platform/feature/search/SearchViewModel.kt
+@@ -31,6 +31,7 @@ import com.x8bit.bitwarden.data.autofill.manager.AutofillSelectionManager
+ import com.x8bit.bitwarden.data.autofill.model.AutofillSelectionData
+ import com.x8bit.bitwarden.data.autofill.util.login
+ import com.x8bit.bitwarden.data.billing.manager.PremiumStateManager
++import com.x8bit.bitwarden.data.community.CommunityFeatureAccess
+ import com.x8bit.bitwarden.data.platform.manager.FeatureFlagManager
+ import com.x8bit.bitwarden.data.platform.manager.PolicyManager
+ import com.x8bit.bitwarden.data.platform.manager.SpecialCircumstanceManager
+@@ -458,7 +459,7 @@ class SearchViewModel @Inject constructor(
+     }
+ 
+     private fun handleArchiveClick(action: ListingItemOverflowAction.VaultAction.ArchiveClick) {
+-        if (!state.isPremium) {
++        if (!CommunityFeatureAccess.archive && !state.isPremium) {
+             mutableStateFlow.update {
+                 it.copy(dialogState = SearchState.DialogState.ArchiveRequiresPremium)
+             }
+diff --git a/app/src/main/kotlin/com/x8bit/bitwarden/ui/platform/feature/settings/SettingsNavigation.kt b/app/src/main/kotlin/com/x8bit/bitwarden/ui/platform/feature/settings/SettingsNavigation.kt
+index b4b85ff0c1664952014e52b7697e26694f713989..142e7ff2bd47c538a68b6692e0438d3aad0121bf 100644
+--- a/app/src/main/kotlin/com/x8bit/bitwarden/ui/platform/feature/settings/SettingsNavigation.kt
++++ b/app/src/main/kotlin/com/x8bit/bitwarden/ui/platform/feature/settings/SettingsNavigation.kt
+@@ -35,6 +35,8 @@ import com.x8bit.bitwarden.ui.platform.feature.settings.other.navigateToOther
+ import com.x8bit.bitwarden.ui.platform.feature.settings.other.otherDestination
+ import com.x8bit.bitwarden.ui.platform.feature.settings.vault.navigateToVaultSettings
+ import com.x8bit.bitwarden.ui.platform.feature.settings.vault.vaultSettingsDestination
++import com.x8bit.bitwarden.ui.platform.feature.settings.vaulthealth.navigateToVaultHealth
++import com.x8bit.bitwarden.ui.platform.feature.settings.vaulthealth.vaultHealthDestination
+ import com.x8bit.bitwarden.ui.platform.feature.premium.plan.navigateToPlan
+ import com.x8bit.bitwarden.ui.platform.feature.premium.plan.planDestination
+ import com.x8bit.bitwarden.ui.vault.feature.importitems.importItemsDestination
+@@ -110,7 +112,7 @@ fun SavedStateHandle.toSettingsArgs(): SettingsArgs {
+ /**
+  * Add settings destinations to the nav graph.
+  */
+-@Suppress("LongMethod", "LongParameterList")
++@Suppress("LongMethod", "LongParameterList", "UnusedParameter")
+ fun NavGraphBuilder.settingsGraph(
+     navController: NavController,
+     onNavigateToDeleteAccount: () -> Unit,
+@@ -138,6 +140,7 @@ fun NavGraphBuilder.settingsGraph(
+                 onNavigateToAccountSecurity = { navController.navigateToAccountSecurity() },
+                 onNavigateToAppearance = { navController.navigateToAppearance(isPreAuth = false) },
+                 onNavigateToAutoFill = { navController.navigateToAutoFill() },
++                onNavigateToVaultHealth = { navController.navigateToVaultHealth() },
+                 onNavigateToOther = { navController.navigateToOther(isPreAuth = false) },
+                 onNavigateToVault = { navController.navigateToVaultSettings() },
+                 onNavigateToPlan = { navController.navigateToPlan() },
+@@ -179,6 +182,7 @@ fun NavGraphBuilder.settingsGraph(
+             onNavigateToImportLogins = onNavigateToImportLogins,
+             onNavigateToImportItems = onNavigateToImportItems,
+         )
++        vaultHealthDestination(onNavigateBack = { navController.popBackStack() })
+         importItemsDestination(
+             onNavigateBack = { navController.popBackStack() },
+             onNavigateToImportLogins = onNavigateToImportLogins,
+@@ -187,7 +191,6 @@ fun NavGraphBuilder.settingsGraph(
+         privilegedAppsListDestination(onNavigateBack = { navController.popBackStack() })
+         planDestination(
+             onNavigateBack = { navController.popBackStack() },
+-            onNavigateToUpgradedToPremium = onNavigateToUpgradedToPremium,
+         )
+     }
+ }
+@@ -206,6 +209,7 @@ fun NavGraphBuilder.preAuthSettingsDestinations(
+             onNavigateToOther = { navController.navigateToOther(isPreAuth = true) },
+             onNavigateToAccountSecurity = { /* no-op */ },
+             onNavigateToAutoFill = { /* no-op */ },
++            onNavigateToVaultHealth = { /* no-op */ },
+             onNavigateToVault = { /* no-op */ },
+             onNavigateToPlan = { /* no-op */ },
+         )
+diff --git a/app/src/main/kotlin/com/x8bit/bitwarden/ui/platform/feature/settings/SettingsScreen.kt b/app/src/main/kotlin/com/x8bit/bitwarden/ui/platform/feature/settings/SettingsScreen.kt
+index 0fef7eb714b76ea0d69d1b2984fd0eb44aad6d02..e71c19657c819f5a06de2d13a76ee9354fd7328c 100644
+--- a/app/src/main/kotlin/com/x8bit/bitwarden/ui/platform/feature/settings/SettingsScreen.kt
++++ b/app/src/main/kotlin/com/x8bit/bitwarden/ui/platform/feature/settings/SettingsScreen.kt
+@@ -52,6 +52,7 @@ fun SettingsScreen(
+     onNavigateToAccountSecurity: () -> Unit,
+     onNavigateToAppearance: () -> Unit,
+     onNavigateToAutoFill: () -> Unit,
++    onNavigateToVaultHealth: () -> Unit,
+     onNavigateToOther: () -> Unit,
+     onNavigateToVault: () -> Unit,
+     onNavigateToPlan: () -> Unit,
+@@ -66,6 +67,7 @@ fun SettingsScreen(
+             SettingsEvent.NavigateAccountSecurity -> onNavigateToAccountSecurity()
+             SettingsEvent.NavigateAppearance -> onNavigateToAppearance()
+             SettingsEvent.NavigateAutoFill -> onNavigateToAutoFill()
++            SettingsEvent.NavigateVaultHealth -> onNavigateToVaultHealth()
+             SettingsEvent.NavigateOther -> onNavigateToOther()
+             SettingsEvent.NavigateVault -> onNavigateToVault()
+             SettingsEvent.NavigateAccountSecurityShortcut -> onNavigateToAccountSecurity()
+diff --git a/app/src/main/kotlin/com/x8bit/bitwarden/ui/platform/feature/settings/SettingsViewModel.kt b/app/src/main/kotlin/com/x8bit/bitwarden/ui/platform/feature/settings/SettingsViewModel.kt
+index 445305bdaaf84c9e8f1d5d7b90c20619c70d8e55..eb78b4fc8d875d4885602af60fe89643c80c4a72 100644
+--- a/app/src/main/kotlin/com/x8bit/bitwarden/ui/platform/feature/settings/SettingsViewModel.kt
++++ b/app/src/main/kotlin/com/x8bit/bitwarden/ui/platform/feature/settings/SettingsViewModel.kt
+@@ -12,6 +12,7 @@ import com.bitwarden.ui.util.Text
+ import com.bitwarden.ui.util.asText
+ import com.x8bit.bitwarden.data.billing.manager.PremiumStateManager
+ import com.x8bit.bitwarden.data.billing.manager.UPGRADED_TO_PREMIUM_LEARN_MORE_URL
++import com.x8bit.bitwarden.data.community.CommunityFeatureAccess
+ import com.x8bit.bitwarden.data.platform.manager.FirstTimeActionManager
+ import com.x8bit.bitwarden.data.platform.manager.SpecialCircumstanceManager
+ import com.x8bit.bitwarden.data.platform.manager.model.SpecialCircumstance
+@@ -176,6 +177,10 @@ class SettingsViewModel @Inject constructor(
+                 sendEvent(SettingsEvent.NavigateVault)
+             }
+ 
++            Settings.VAULT_HEALTH -> {
++                sendEvent(SettingsEvent.NavigateVaultHealth)
++            }
++
+             Settings.APPEARANCE -> {
+                 sendEvent(SettingsEvent.NavigateAppearance)
+             }
+@@ -213,7 +218,10 @@ data class SettingsState(
+      * Whether the "Upgraded to Premium" action card should be shown. The card is only visible
+      * post-authentication.
+      */
+-    val shouldShowUpgradedToPremiumCard: Boolean = !isPreAuth && isUpgradedToPremiumCardEligible
++    val shouldShowUpgradedToPremiumCard: Boolean =
++        CommunityFeatureAccess.showPremiumPromotions &&
++            !isPreAuth &&
++            isUpgradedToPremiumCardEligible
+ 
+     /**
+      * Whether the plan row should be shown. The row is visible post-authentication when the user
+@@ -222,7 +230,7 @@ data class SettingsState(
+      * Premium — and the account is on a cloud-hosted environment. Self-hosted users manage their
+      * subscription on the web vault.
+      */
+-    private val shouldShowPlanRow: Boolean = !isPreAuth && isPlanRowEligible && !isSelfHosted
++    private val shouldShowPlanRow: Boolean = !isPreAuth
+ 
+     val settingRows: ImmutableList<Settings> = Settings
+         .entries
+@@ -231,6 +239,7 @@ data class SettingsState(
+                 Settings.ACCOUNT_SECURITY -> !isPreAuth
+                 Settings.AUTO_FILL -> !isPreAuth
+                 Settings.VAULT -> !isPreAuth
++                Settings.VAULT_HEALTH -> !isPreAuth
+                 Settings.APPEARANCE -> true
+                 Settings.PLAN -> shouldShowPlanRow
+                 Settings.OTHER -> true
+@@ -290,6 +299,9 @@ sealed class SettingsEvent {
+      */
+     data object NavigateVault : SettingsEvent()
+ 
++    /** Navigate to the device-local vault health report. */
++    data object NavigateVaultHealth : SettingsEvent()
++
+     /**
+      * Navigate to the plan screen.
+      */
+@@ -392,13 +404,18 @@ enum class Settings(
+         vectorIconRes = BitwardenDrawable.ic_vault_thin,
+         testTag = "VaultSettingsButton",
+     ),
++    VAULT_HEALTH(
++        text = BitwardenString.vault_health.asText(),
++        vectorIconRes = BitwardenDrawable.ic_shield,
++        testTag = "VaultHealthSettingsButton",
++    ),
+     APPEARANCE(
+         text = BitwardenString.appearance.asText(),
+         vectorIconRes = BitwardenDrawable.ic_paintbrush,
+         testTag = "AppearanceSettingsButton",
+     ),
+     PLAN(
+-        text = BitwardenString.plan.asText(),
++        text = BitwardenString.openwarden_community.asText(),
+         vectorIconRes = BitwardenDrawable.ic_plan,
+         testTag = "PlanSettingsButton",
+     ),
+diff --git a/app/src/main/kotlin/com/x8bit/bitwarden/ui/platform/feature/settings/about/AboutViewModel.kt b/app/src/main/kotlin/com/x8bit/bitwarden/ui/platform/feature/settings/about/AboutViewModel.kt
+index d7c8ec511a7f8793f4750dea435c2fa247d3b1d2..32ee4a99f50dab3de3dc51c32e7339e88353d567 100644
+--- a/app/src/main/kotlin/com/x8bit/bitwarden/ui/platform/feature/settings/about/AboutViewModel.kt
++++ b/app/src/main/kotlin/com/x8bit/bitwarden/ui/platform/feature/settings/about/AboutViewModel.kt
+@@ -69,7 +69,7 @@ class AboutViewModel @Inject constructor(
+             flightRecorderSubtext = settingsRepository
+                 .flightRecorderData
+                 .getStopsLoggingStringForActiveLog(clock = clock),
+-            copyrightInfo = "© Bitwarden Inc. 2015-${Year.now(clock).value}".asText(),
++            copyrightInfo = "© OpenWarden contributors ${Year.now(clock).value}".asText(),
+         )
+     },
+ ) {
+diff --git a/app/src/main/kotlin/com/x8bit/bitwarden/ui/platform/feature/settings/vaulthealth/VaultHealthNavigation.kt b/app/src/main/kotlin/com/x8bit/bitwarden/ui/platform/feature/settings/vaulthealth/VaultHealthNavigation.kt
+new file mode 100644
+index 0000000000000000000000000000000000000000..51653067d5813135080afc062e42ab444d6f2145
+--- /dev/null
++++ b/app/src/main/kotlin/com/x8bit/bitwarden/ui/platform/feature/settings/vaulthealth/VaultHealthNavigation.kt
+@@ -0,0 +1,26 @@
++@file:OmitFromCoverage
++
++package com.x8bit.bitwarden.ui.platform.feature.settings.vaulthealth
++
++import androidx.navigation.NavController
++import androidx.navigation.NavGraphBuilder
++import androidx.navigation.NavOptions
++import com.bitwarden.annotation.OmitFromCoverage
++import com.bitwarden.ui.platform.base.util.composableWithPushTransitions
++import kotlinx.serialization.Serializable
++
++/** Route for the device-local vault health report. */
++@Serializable
++data object VaultHealthRoute
++
++/** Adds the vault health destination to a navigation graph. */
++fun NavGraphBuilder.vaultHealthDestination(onNavigateBack: () -> Unit) {
++    composableWithPushTransitions<VaultHealthRoute> {
++        VaultHealthScreen(onNavigateBack = onNavigateBack)
++    }
++}
++
++/** Navigates to the vault health report. */
++fun NavController.navigateToVaultHealth(navOptions: NavOptions? = null) {
++    navigate(route = VaultHealthRoute, navOptions = navOptions)
++}
+diff --git a/app/src/main/kotlin/com/x8bit/bitwarden/ui/platform/feature/settings/vaulthealth/VaultHealthScreen.kt b/app/src/main/kotlin/com/x8bit/bitwarden/ui/platform/feature/settings/vaulthealth/VaultHealthScreen.kt
+new file mode 100644
+index 0000000000000000000000000000000000000000..42f4002da8997108c5325772d18c2109c1297a00
+--- /dev/null
++++ b/app/src/main/kotlin/com/x8bit/bitwarden/ui/platform/feature/settings/vaulthealth/VaultHealthScreen.kt
+@@ -0,0 +1,159 @@
++package com.x8bit.bitwarden.ui.platform.feature.settings.vaulthealth
++
++import androidx.compose.foundation.layout.Column
++import androidx.compose.foundation.layout.Spacer
++import androidx.compose.foundation.layout.fillMaxSize
++import androidx.compose.foundation.layout.fillMaxWidth
++import androidx.compose.foundation.layout.height
++import androidx.compose.foundation.layout.navigationBarsPadding
++import androidx.compose.foundation.layout.padding
++import androidx.compose.foundation.rememberScrollState
++import androidx.compose.foundation.verticalScroll
++import androidx.compose.material3.ExperimentalMaterial3Api
++import androidx.compose.material3.Text
++import androidx.compose.material3.TopAppBarDefaults
++import androidx.compose.material3.rememberTopAppBarState
++import androidx.compose.runtime.Composable
++import androidx.compose.runtime.getValue
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.input.nestedscroll.nestedScroll
++import androidx.compose.ui.res.stringResource
++import androidx.compose.ui.unit.dp
++import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
++import androidx.lifecycle.compose.collectAsStateWithLifecycle
++import com.bitwarden.ui.platform.base.util.EventsEffect
++import com.bitwarden.ui.platform.base.util.standardHorizontalMargin
++import com.bitwarden.ui.platform.components.appbar.BitwardenTopAppBar
++import com.bitwarden.ui.platform.components.button.BitwardenFilledButton
++import com.bitwarden.ui.platform.components.card.BitwardenInfoCalloutCard
++import com.bitwarden.ui.platform.components.content.BitwardenLoadingContent
++import com.bitwarden.ui.platform.components.model.CardStyle
++import com.bitwarden.ui.platform.components.row.BitwardenTextRow
++import com.bitwarden.ui.platform.components.scaffold.BitwardenScaffold
++import com.bitwarden.ui.platform.components.util.rememberVectorPainter
++import com.bitwarden.ui.platform.resource.BitwardenDrawable
++import com.bitwarden.ui.platform.resource.BitwardenString
++import com.bitwarden.ui.platform.theme.BitwardenTheme
++
++/** Displays the device-local vault health report. */
++@OptIn(ExperimentalMaterial3Api::class)
++@Composable
++fun VaultHealthScreen(
++    onNavigateBack: () -> Unit,
++    viewModel: VaultHealthViewModel = hiltViewModel(),
++) {
++    val state by viewModel.stateFlow.collectAsStateWithLifecycle()
++    EventsEffect(viewModel = viewModel) { event ->
++        when (event) {
++            VaultHealthEvent.NavigateBack -> onNavigateBack()
++        }
++    }
++    val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior(rememberTopAppBarState())
++    BitwardenScaffold(
++        topBar = {
++            BitwardenTopAppBar(
++                title = stringResource(BitwardenString.vault_health),
++                navigationIcon = rememberVectorPainter(BitwardenDrawable.ic_back),
++                navigationIconContentDescription = stringResource(BitwardenString.back),
++                onNavigationIconClick = {
++                    viewModel.trySendAction(VaultHealthAction.BackClick)
++                },
++                scrollBehavior = scrollBehavior,
++            )
++        },
++        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
++    ) {
++        if (state.isScanning) {
++            BitwardenLoadingContent(modifier = Modifier.fillMaxSize())
++        } else {
++            VaultHealthContent(
++                state = state,
++                onScan = { viewModel.trySendAction(VaultHealthAction.ScanClick) },
++            )
++        }
++    }
++}
++
++@Composable
++private fun VaultHealthContent(
++    state: VaultHealthState,
++    onScan: () -> Unit,
++) {
++    Column(
++        modifier = Modifier
++            .fillMaxSize()
++            .verticalScroll(rememberScrollState()),
++    ) {
++        Spacer(modifier = Modifier.height(16.dp))
++        BitwardenInfoCalloutCard(
++            text = stringResource(BitwardenString.vault_health_description),
++            modifier = Modifier
++                .standardHorizontalMargin()
++                .fillMaxWidth(),
++        )
++        Spacer(modifier = Modifier.height(16.dp))
++        BitwardenFilledButton(
++            label = stringResource(BitwardenString.scan_vault),
++            onClick = onScan,
++            modifier = Modifier
++                .standardHorizontalMargin()
++                .fillMaxWidth(),
++        )
++        state.report?.let { report ->
++            Spacer(modifier = Modifier.height(24.dp))
++            Text(
++                text = stringResource(BitwardenString.vault_health_score, report.score),
++                style = BitwardenTheme.typography.titleMedium,
++                color = BitwardenTheme.colorScheme.text.primary,
++                modifier = Modifier.standardHorizontalMargin(),
++            )
++            Text(
++                text = stringResource(BitwardenString.vault_health_logins_scanned, report.total),
++                style = BitwardenTheme.typography.bodyMedium,
++                color = BitwardenTheme.colorScheme.text.secondary,
++                modifier = Modifier
++                    .standardHorizontalMargin()
++                    .padding(top = 4.dp, bottom = 12.dp),
++            )
++            HealthRow(BitwardenString.vault_health_exposed, report.exposed)
++            HealthRow(BitwardenString.vault_health_weak, report.weak)
++            HealthRow(BitwardenString.vault_health_reused, report.reused)
++            HealthRow(BitwardenString.vault_health_old, report.old)
++            HealthRow(BitwardenString.vault_health_unsecured, report.unsecured)
++            HealthRow(BitwardenString.vault_health_suspicious, report.suspicious)
++            HealthRow(BitwardenString.vault_health_duplicate, report.duplicate)
++            HealthRow(BitwardenString.vault_health_missing_two_factor, report.missingTwoFactor)
++        }
++        if (state.error) {
++            Spacer(modifier = Modifier.height(16.dp))
++            Text(
++                text = stringResource(BitwardenString.vault_health_scan_failed),
++                style = BitwardenTheme.typography.bodyMedium,
++                color = BitwardenTheme.colorScheme.status.error,
++                modifier = Modifier.standardHorizontalMargin(),
++            )
++        }
++        Spacer(modifier = Modifier.height(16.dp))
++        Spacer(modifier = Modifier.navigationBarsPadding())
++    }
++}
++
++@Composable
++private fun HealthRow(label: Int, count: Int) {
++    BitwardenTextRow(
++        text = stringResource(label),
++        onClick = {},
++        cardStyle = CardStyle.Full,
++        clickable = false,
++        modifier = Modifier
++            .standardHorizontalMargin()
++            .padding(bottom = 8.dp)
++            .fillMaxWidth(),
++    ) {
++        Text(
++            text = count.toString(),
++            style = BitwardenTheme.typography.bodyLarge,
++            color = BitwardenTheme.colorScheme.text.primary,
++        )
++    }
++}
+diff --git a/app/src/main/kotlin/com/x8bit/bitwarden/ui/platform/feature/settings/vaulthealth/VaultHealthViewModel.kt b/app/src/main/kotlin/com/x8bit/bitwarden/ui/platform/feature/settings/vaulthealth/VaultHealthViewModel.kt
+new file mode 100644
+index 0000000000000000000000000000000000000000..db673f0c631431b5f030f69a317a4a05a609dc80
+--- /dev/null
++++ b/app/src/main/kotlin/com/x8bit/bitwarden/ui/platform/feature/settings/vaulthealth/VaultHealthViewModel.kt
+@@ -0,0 +1,260 @@
++package com.x8bit.bitwarden.ui.platform.feature.settings.vaulthealth
++
++import androidx.lifecycle.viewModelScope
++import com.bitwarden.ui.platform.base.BaseViewModel
++import com.bitwarden.vault.CipherType
++import com.bitwarden.vault.CipherView
++import com.x8bit.bitwarden.data.auth.datasource.sdk.model.PasswordStrength
++import com.x8bit.bitwarden.data.auth.repository.AuthRepository
++import com.x8bit.bitwarden.data.auth.repository.model.BreachCountResult
++import com.x8bit.bitwarden.data.auth.repository.model.PasswordStrengthResult
++import com.x8bit.bitwarden.data.vault.manager.model.GetCipherResult
++import com.x8bit.bitwarden.data.vault.repository.VaultRepository
++import dagger.hilt.android.lifecycle.HiltViewModel
++import kotlinx.coroutines.flow.first
++import kotlinx.coroutines.flow.update
++import kotlinx.coroutines.launch
++import java.net.URI
++import java.time.Clock
++import java.time.Duration
++import javax.inject.Inject
++
++private const val OLD_PASSWORD_AGE_DAYS = 180L
++private const val MIN_HEALTH_SCORE = 0
++private const val MAX_HEALTH_SCORE = 100
++private val OLD_PASSWORD_AGE: Duration = Duration.ofDays(OLD_PASSWORD_AGE_DAYS)
++
++/** Builds a device-local security report from decrypted vault items. */
++@HiltViewModel
++@Suppress("TooManyFunctions")
++class VaultHealthViewModel @Inject constructor(
++    private val vaultRepository: VaultRepository,
++    private val authRepository: AuthRepository,
++    private val clock: Clock,
++) : BaseViewModel<VaultHealthState, VaultHealthEvent, VaultHealthAction>(
++    initialState = VaultHealthState(),
++) {
++    override fun handleAction(action: VaultHealthAction) {
++        when (action) {
++            VaultHealthAction.BackClick -> sendEvent(VaultHealthEvent.NavigateBack)
++            VaultHealthAction.ScanClick -> scanVault()
++        }
++    }
++
++    private fun scanVault() {
++        if (state.isScanning) return
++        mutableStateFlow.update { it.copy(isScanning = true, error = false) }
++
++        viewModelScope.launch {
++            runCatching { buildReport() }
++                .onSuccess { report ->
++                    mutableStateFlow.update {
++                        it.copy(isScanning = false, report = report, error = false)
++                    }
++                }
++                .onFailure {
++                    mutableStateFlow.update { state ->
++                        state.copy(isScanning = false, error = true)
++                    }
++                }
++        }
++    }
++
++    private suspend fun buildReport(): VaultHealthReport {
++        val logins = loadLogins()
++        val riskIds = findRiskIds(logins)
++        return VaultHealthReport(
++            total = logins.size,
++            score = calculateHealthScore(
++                total = logins.size,
++                atRisk = riskIds.all.size,
++            ),
++            exposed = riskIds.exposed.size,
++            weak = riskIds.weak.size,
++            reused = riskIds.reused.size,
++            old = riskIds.old.size,
++            unsecured = riskIds.unsecured.size,
++            suspicious = riskIds.suspicious.size,
++            duplicate = riskIds.duplicate.size,
++            missingTwoFactor = riskIds.missingTwoFactor.size,
++        )
++    }
++
++    private suspend fun loadLogins(): List<CipherView> =
++        vaultRepository.decryptCipherListResultStateFlow
++            .first { it.data != null }
++            .data
++            ?.successes
++            .orEmpty()
++            .mapNotNull { listItem ->
++                val cipherId = listItem.id ?: return@mapNotNull null
++                when (val result = vaultRepository.getCipher(cipherId)) {
++                    is GetCipherResult.Success -> result.cipherView
++                    else -> null
++                }
++            }
++            .filter { cipher ->
++                cipher.type == CipherType.LOGIN &&
++                    cipher.deletedDate == null &&
++                    cipher.archivedDate == null &&
++                    !cipher.login?.password.isNullOrBlank()
++            }
++
++    private suspend fun findRiskIds(logins: List<CipherView>): VaultHealthRiskIds {
++        val passwordGroups = logins.groupBy { requireNotNull(it.login?.password) }
++        return VaultHealthRiskIds(
++            exposed = findExposedIds(logins = logins, passwords = passwordGroups.keys),
++            weak = findWeakIds(logins),
++            reused = passwordGroups
++                .values
++                .filter { it.size > 1 }
++                .flatten()
++                .mapNotNullTo(mutableSetOf()) { it.id },
++            old = findOldIds(logins),
++            unsecured = findUnsecuredIds(logins),
++            suspicious = findSuspiciousIds(logins),
++            duplicate = findDuplicateIds(logins),
++            missingTwoFactor = findMissingTwoFactorIds(logins),
++        )
++    }
++
++    private suspend fun findWeakIds(logins: List<CipherView>): Set<String> =
++        logins
++            .filter { cipher ->
++                when (
++                    val result = authRepository.getPasswordStrength(
++                        email = null,
++                        password = requireNotNull(cipher.login?.password),
++                    )
++                ) {
++                    is PasswordStrengthResult.Success ->
++                        result.passwordStrength.ordinal <= PasswordStrength.LEVEL_2.ordinal
++                    is PasswordStrengthResult.Error -> false
++                }
++            }
++            .mapNotNullTo(mutableSetOf()) { it.id }
++
++    private suspend fun findExposedIds(
++        logins: List<CipherView>,
++        passwords: Set<String>,
++    ): Set<String> {
++        val exposedPasswords = mutableSetOf<String>()
++        passwords.forEach { password ->
++            val result = authRepository.getPasswordBreachCount(password)
++            if (result is BreachCountResult.Success && result.breachCount > 0) {
++                exposedPasswords += password
++            }
++        }
++        return logins
++            .filter { it.login?.password in exposedPasswords }
++            .mapNotNullTo(mutableSetOf()) { it.id }
++    }
++
++    private fun findOldIds(logins: List<CipherView>): Set<String> {
++        val oldestAllowed = clock.instant().minus(OLD_PASSWORD_AGE)
++        return logins.filter { cipher ->
++            val changed = cipher.login?.passwordRevisionDate ?: cipher.revisionDate
++            changed.isBefore(oldestAllowed)
++        }.mapNotNullTo(mutableSetOf()) { it.id }
++    }
++
++    private fun findUnsecuredIds(logins: List<CipherView>): Set<String> =
++        logins.filter { cipher ->
++            cipher.login?.uris.orEmpty().any { uri ->
++                uri.uri?.trim()?.startsWith(prefix = "http://", ignoreCase = true) == true
++            }
++        }.mapNotNullTo(mutableSetOf()) { it.id }
++
++    private fun findSuspiciousIds(logins: List<CipherView>): Set<String> =
++        logins.filter { cipher ->
++            cipher.login?.uris.orEmpty().any { uri ->
++                runCatching { URI(uri.uri.orEmpty()).host }
++                    .getOrNull()
++                    ?.split('.')
++                    ?.any { label -> label.startsWith("xn--", ignoreCase = true) } == true
++            }
++        }.mapNotNullTo(mutableSetOf()) { it.id }
++
++    private fun findMissingTwoFactorIds(logins: List<CipherView>): Set<String> =
++        logins.filter { cipher ->
++            cipher.login?.totp.isNullOrBlank() &&
++                cipher.login?.fido2Credentials.isNullOrEmpty()
++        }.mapNotNullTo(mutableSetOf()) { it.id }
++
++    private fun findDuplicateIds(logins: List<CipherView>): Set<String> =
++        logins
++            .groupBy { cipher ->
++                val username = cipher.login?.username.orEmpty().trim().lowercase()
++                val rawUri = cipher.login?.uris?.firstOrNull()?.uri.orEmpty().trim()
++                val host = runCatching { URI(rawUri).host }
++                    .getOrNull()
++                    ?.lowercase()
++                    ?: rawUri.lowercase()
++                "$host\n$username"
++            }
++            .filterKeys { it.isNotBlank() }
++            .values
++            .filter { duplicates -> duplicates.size > 1 }
++            .flatten()
++            .mapNotNullTo(mutableSetOf()) { it.id }
++
++    private fun calculateHealthScore(total: Int, atRisk: Int): Int =
++        if (total == 0) {
++            MAX_HEALTH_SCORE
++        } else {
++            (((total - atRisk) * MAX_HEALTH_SCORE.toDouble()) / total)
++                .toInt()
++                .coerceIn(MIN_HEALTH_SCORE, MAX_HEALTH_SCORE)
++        }
++}
++
++/** State for the device-local report. */
++data class VaultHealthState(
++    val isScanning: Boolean = false,
++    val report: VaultHealthReport? = null,
++    val error: Boolean = false,
++)
++
++/** Aggregate counts shown by the report. */
++data class VaultHealthReport(
++    val total: Int,
++    val score: Int,
++    val exposed: Int,
++    val weak: Int,
++    val reused: Int,
++    val old: Int,
++    val unsecured: Int,
++    val suspicious: Int,
++    val duplicate: Int,
++    val missingTwoFactor: Int,
++)
++
++/** User actions from the vault health screen. */
++sealed class VaultHealthAction {
++    /** Return to Settings. */
++    data object BackClick : VaultHealthAction()
++
++    /** Re-run the local vault scan. */
++    data object ScanClick : VaultHealthAction()
++}
++
++/** One-time screen events. */
++sealed class VaultHealthEvent {
++    /** Return to Settings. */
++    data object NavigateBack : VaultHealthEvent()
++}
++
++private data class VaultHealthRiskIds(
++    val exposed: Set<String>,
++    val weak: Set<String>,
++    val reused: Set<String>,
++    val old: Set<String>,
++    val unsecured: Set<String>,
++    val suspicious: Set<String>,
++    val duplicate: Set<String>,
++    val missingTwoFactor: Set<String>,
++) {
++    val all: Set<String>
++        get() = exposed + weak + reused + old + unsecured + suspicious + duplicate +
++            missingTwoFactor
++}
+diff --git a/app/src/main/kotlin/com/x8bit/bitwarden/ui/platform/feature/vaultunlocked/VaultUnlockedNavigation.kt b/app/src/main/kotlin/com/x8bit/bitwarden/ui/platform/feature/vaultunlocked/VaultUnlockedNavigation.kt
+index 0f8613fe2e879bc1ff006af64500fc4964fa24c7..5a62e75fbae0a00c935af3cd833f7641c1abb75a 100644
+--- a/app/src/main/kotlin/com/x8bit/bitwarden/ui/platform/feature/vaultunlocked/VaultUnlockedNavigation.kt
++++ b/app/src/main/kotlin/com/x8bit/bitwarden/ui/platform/feature/vaultunlocked/VaultUnlockedNavigation.kt
+@@ -317,9 +317,6 @@ fun NavGraphBuilder.vaultUnlockedGraph(
+         )
+         planModalDestination(
+             onNavigateBack = { navController.popBackStack() },
+-            onNavigateToUpgradedToPremium = {
+-                navController.navigateToUpgradedToPremium(planMode = PlanMode.Modal)
+-            },
+         )
+         upgradedToPremiumDestination(
+             onDismiss = { planMode ->
+diff --git a/app/src/main/kotlin/com/x8bit/bitwarden/ui/tools/feature/send/SendViewModel.kt b/app/src/main/kotlin/com/x8bit/bitwarden/ui/tools/feature/send/SendViewModel.kt
+index 80dd8cafd83d965bdcb7a6688f7bba4ff46b03c2..655056a24b03b7470601b2e12767027fb8a3ecfc 100644
+--- a/app/src/main/kotlin/com/x8bit/bitwarden/ui/tools/feature/send/SendViewModel.kt
++++ b/app/src/main/kotlin/com/x8bit/bitwarden/ui/tools/feature/send/SendViewModel.kt
+@@ -19,6 +19,7 @@ import com.x8bit.bitwarden.data.auth.repository.AuthRepository
+ import com.x8bit.bitwarden.data.auth.repository.model.UserState
+ import com.x8bit.bitwarden.data.billing.manager.PremiumStateManager
+ import com.x8bit.bitwarden.data.billing.manager.UPGRADED_TO_PREMIUM_LEARN_MORE_URL
++import com.x8bit.bitwarden.data.community.CommunityFeatureAccess
+ import com.x8bit.bitwarden.data.platform.manager.PolicyManager
+ import com.x8bit.bitwarden.data.platform.manager.clipboard.BitwardenClipboardManager
+ import com.x8bit.bitwarden.data.platform.manager.model.EffectiveSendPolicy
+@@ -360,7 +361,7 @@ class SendViewModel @Inject constructor(
+                 }
+                 return
+             }
+-            if (!state.isPremiumUser) {
++            if (!CommunityFeatureAccess.fileSends && !state.isPremiumUser) {
+                 mutableStateFlow.update {
+                     it.copy(dialogState = SendState.DialogState.FileTypeRequiresPremium)
+                 }
+diff --git a/app/src/main/kotlin/com/x8bit/bitwarden/ui/tools/feature/send/addedit/AddEditSendViewModel.kt b/app/src/main/kotlin/com/x8bit/bitwarden/ui/tools/feature/send/addedit/AddEditSendViewModel.kt
+index 58bb9a4763fdce9a5dc605fe2f0c808a32f12fc3..a8055a059be2577be33a16aff5c6a8382fb70a2a 100644
+--- a/app/src/main/kotlin/com/x8bit/bitwarden/ui/tools/feature/send/addedit/AddEditSendViewModel.kt
++++ b/app/src/main/kotlin/com/x8bit/bitwarden/ui/tools/feature/send/addedit/AddEditSendViewModel.kt
+@@ -24,6 +24,7 @@ import com.bitwarden.ui.util.asText
+ import com.bitwarden.ui.util.concat
+ import com.x8bit.bitwarden.data.auth.repository.AuthRepository
+ import com.x8bit.bitwarden.data.billing.manager.PremiumStateManager
++import com.x8bit.bitwarden.data.community.CommunityFeatureAccess
+ import com.x8bit.bitwarden.data.platform.manager.FeatureFlagManager
+ import com.x8bit.bitwarden.data.platform.manager.PolicyManager
+ import com.x8bit.bitwarden.data.platform.manager.SpecialCircumstanceManager
+@@ -689,7 +690,10 @@ class AddEditSendViewModel @Inject constructor(
+ 
+     private fun handleAuthTypeSelect(action: AddEditSendAction.AuthTypeSelect) {
+         // Check if user is trying to select Email auth without Premium
+-        if (action.sendAuth is SendAuth.Email && !state.isPremium) {
++        if (action.sendAuth is SendAuth.Email &&
++            !CommunityFeatureAccess.sendEmailRestrictions &&
++            !state.isPremium
++        ) {
+             mutableStateFlow.update {
+                 it.copy(
+                     dialogState = AddEditSendState.DialogState.PremiumRequired(
+@@ -847,7 +851,7 @@ class AddEditSendViewModel @Inject constructor(
+ 
+             (content.selectedType as? AddEditSendState.ViewState.Content.SendType.File)
+                 ?.let { fileType ->
+-                    if (!state.isPremium) {
++                    if (!CommunityFeatureAccess.canUseFileSends(state.isPremium)) {
+                         // We should never get here without a Premium account, but we do one last
+                         // check just in case.
+                         mutableStateFlow.update {
+diff --git a/app/src/main/kotlin/com/x8bit/bitwarden/ui/vault/feature/addedit/VaultAddEditViewModel.kt b/app/src/main/kotlin/com/x8bit/bitwarden/ui/vault/feature/addedit/VaultAddEditViewModel.kt
+index f1be06a9c8bd7e5dae135254554fc9e7b7e6ed76..5ab8048820054c99b53e8fb3fd3ccf42896197c4 100644
+--- a/app/src/main/kotlin/com/x8bit/bitwarden/ui/vault/feature/addedit/VaultAddEditViewModel.kt
++++ b/app/src/main/kotlin/com/x8bit/bitwarden/ui/vault/feature/addedit/VaultAddEditViewModel.kt
+@@ -35,6 +35,7 @@ import com.x8bit.bitwarden.data.auth.repository.model.ValidatePasswordResult
+ import com.x8bit.bitwarden.data.auth.repository.model.ValidatePinResult
+ import com.x8bit.bitwarden.data.autofill.util.isActiveWithFido2Credentials
+ import com.x8bit.bitwarden.data.billing.manager.PremiumStateManager
++import com.x8bit.bitwarden.data.community.CommunityFeatureAccess
+ import com.x8bit.bitwarden.data.credentials.manager.BitwardenCredentialManager
+ import com.x8bit.bitwarden.data.credentials.model.CreateCredentialRequest
+ import com.x8bit.bitwarden.data.credentials.model.Fido2RegisterCredentialResult
+@@ -622,7 +623,7 @@ class VaultAddEditViewModel @Inject constructor(
+     }
+ 
+     private fun handleArchiveClick() {
+-        if (!state.hasPremium) {
++        if (!CommunityFeatureAccess.archive && !state.hasPremium) {
+             mutableStateFlow.update {
+                 it.copy(dialog = VaultAddEditState.DialogState.ArchiveRequiresPremium)
+             }
+diff --git a/app/src/main/kotlin/com/x8bit/bitwarden/ui/vault/feature/addedit/util/CipherViewExtensions.kt b/app/src/main/kotlin/com/x8bit/bitwarden/ui/vault/feature/addedit/util/CipherViewExtensions.kt
+index 93c0d827cd558a7b579e84acd7c54a6b395ffa03..ce9ad65e7c34ba1d8ea9cf90e63646aecc391e6d 100644
+--- a/app/src/main/kotlin/com/x8bit/bitwarden/ui/vault/feature/addedit/util/CipherViewExtensions.kt
++++ b/app/src/main/kotlin/com/x8bit/bitwarden/ui/vault/feature/addedit/util/CipherViewExtensions.kt
+@@ -18,6 +18,7 @@ import com.bitwarden.vault.FieldView
+ import com.bitwarden.vault.FolderView
+ import com.bitwarden.vault.LoginUriView
+ import com.x8bit.bitwarden.data.auth.repository.model.UserState
++import com.x8bit.bitwarden.data.community.CommunityFeatureAccess
+ import com.x8bit.bitwarden.ui.platform.manager.resource.ResourceManager
+ import com.x8bit.bitwarden.ui.vault.feature.addedit.VaultAddEditState
+ import com.x8bit.bitwarden.ui.vault.feature.addedit.model.UriItem
+@@ -162,7 +163,10 @@ fun CipherView.toViewState(
+             customFieldData = this.fields.orEmpty().map { it.toCustomField() },
+             canDelete = canDelete,
+             canAssignToCollections = canAssignToCollections,
+-            archiveCalloutText = if (this.archivedDate != null && isPremium) {
++            archiveCalloutText = if (
++                this.archivedDate != null &&
++                (CommunityFeatureAccess.archive || isPremium)
++            ) {
+                 BitwardenString.this_item_is_archived.asText()
+             } else if (this.archivedDate != null) {
+                 BitwardenString
+diff --git a/app/src/main/kotlin/com/x8bit/bitwarden/ui/vault/feature/attachments/AttachmentsViewModel.kt b/app/src/main/kotlin/com/x8bit/bitwarden/ui/vault/feature/attachments/AttachmentsViewModel.kt
+index 42ccd89bcd8013850e0e6eb9dcec97fc8f2e866e..6aca9a4dbe8ab4bcd255f3b40169d577e5c92369 100644
+--- a/app/src/main/kotlin/com/x8bit/bitwarden/ui/vault/feature/attachments/AttachmentsViewModel.kt
++++ b/app/src/main/kotlin/com/x8bit/bitwarden/ui/vault/feature/attachments/AttachmentsViewModel.kt
+@@ -18,6 +18,7 @@ import com.bitwarden.vault.CipherView
+ import com.x8bit.bitwarden.data.auth.repository.AuthRepository
+ import com.x8bit.bitwarden.data.auth.repository.model.UserState
+ import com.x8bit.bitwarden.data.billing.manager.PremiumStateManager
++import com.x8bit.bitwarden.data.community.CommunityFeatureAccess
+ import com.x8bit.bitwarden.data.platform.manager.FeatureFlagManager
+ import com.x8bit.bitwarden.data.platform.repository.EnvironmentRepository
+ import com.x8bit.bitwarden.data.vault.repository.VaultRepository
+@@ -63,7 +64,9 @@ class AttachmentsViewModel @Inject constructor(
+                 cipherId = savedStateHandle.toAttachmentsArgs().cipherId,
+                 viewState = AttachmentsState.ViewState.Loading,
+                 dialogState = AttachmentsState.DialogState.RequiresPremium
+-                    .takeUnless { isPremiumUser },
++                    .takeUnless {
++                        CommunityFeatureAccess.attachments || isPremiumUser
++                    },
+                 isPremiumUser = isPremiumUser,
+                 isAttachmentUpdatesEnabled = featureFlagManager.getFeatureFlag(
+                     key = FlagKey.AttachmentUpdates,
+@@ -112,7 +115,7 @@ class AttachmentsViewModel @Inject constructor(
+ 
+     private fun handleSaveClick() {
+         onContent { content ->
+-            if (!state.isPremiumUser) {
++            if (!CommunityFeatureAccess.attachments && !state.isPremiumUser) {
+                 mutableStateFlow.update {
+                     it.copy(dialogState = AttachmentsState.DialogState.RequiresPremium)
+                 }
+@@ -239,7 +242,7 @@ class AttachmentsViewModel @Inject constructor(
+     }
+ 
+     private fun handleItemClick(action: AttachmentsAction.ItemClick) {
+-        if (!state.isPremiumUser) {
++        if (!CommunityFeatureAccess.attachments && !state.isPremiumUser) {
+             mutableStateFlow.update {
+                 it.copy(dialogState = AttachmentsState.DialogState.RequiresPremium)
+             }
+diff --git a/app/src/main/kotlin/com/x8bit/bitwarden/ui/vault/feature/item/VaultItemLoginContent.kt b/app/src/main/kotlin/com/x8bit/bitwarden/ui/vault/feature/item/VaultItemLoginContent.kt
+index e12ce92cd71984d96d9a297d9315f560c8f9fc8d..55560fb0354f114513565a50ed2735c97fe130e7 100644
+--- a/app/src/main/kotlin/com/x8bit/bitwarden/ui/vault/feature/item/VaultItemLoginContent.kt
++++ b/app/src/main/kotlin/com/x8bit/bitwarden/ui/vault/feature/item/VaultItemLoginContent.kt
+@@ -21,6 +21,7 @@ import com.bitwarden.ui.platform.base.util.standardHorizontalMargin
+ import com.bitwarden.ui.platform.base.util.toListItemCardStyle
+ import com.bitwarden.ui.platform.components.button.BitwardenStandardIconButton
+ import com.bitwarden.ui.platform.components.button.model.BitwardenHelpButtonData
++import com.bitwarden.ui.platform.components.card.BitwardenInfoCalloutCard
+ import com.bitwarden.ui.platform.components.field.BitwardenHiddenPasswordField
+ import com.bitwarden.ui.platform.components.field.BitwardenPasswordField
+ import com.bitwarden.ui.platform.components.field.BitwardenTextField
+@@ -32,6 +33,7 @@ import com.bitwarden.ui.platform.components.text.BitwardenClickableText
+ import com.bitwarden.ui.platform.resource.BitwardenDrawable
+ import com.bitwarden.ui.platform.resource.BitwardenString
+ import com.bitwarden.ui.platform.theme.BitwardenTheme
++import com.x8bit.bitwarden.data.community.CommunityFeatureAccess
+ import com.x8bit.bitwarden.ui.vault.feature.item.component.itemHeader
+ import com.x8bit.bitwarden.ui.vault.feature.item.component.vaultItemAttachments
+ import com.x8bit.bitwarden.ui.vault.feature.item.component.vaultItemCustomFields
+@@ -40,6 +42,7 @@ import com.x8bit.bitwarden.ui.vault.feature.item.component.vaultItemNotes
+ import com.x8bit.bitwarden.ui.vault.feature.item.handlers.VaultCommonItemTypeHandlers
+ import com.x8bit.bitwarden.ui.vault.feature.item.handlers.VaultLoginItemTypeHandlers
+ import com.x8bit.bitwarden.ui.vault.feature.item.model.TotpCodeItemData
++import java.net.URI
+ 
+ private const val AUTH_CODE_SPACING_INTERVAL = 3
+ 
+@@ -143,7 +146,7 @@ fun VaultItemLoginContent(
+                 Spacer(modifier = Modifier.height(8.dp))
+                 TotpField(
+                     totpCodeItemData = totpCodeItemData,
+-                    enabled = loginItemState.canViewTotpCode,
++                    enabled = CommunityFeatureAccess.totp || loginItemState.canViewTotpCode,
+                     onCopyTotpClick = vaultLoginItemTypeHandlers.onCopyTotpCodeClick,
+                     onAuthenticatorHelpToolTipClick = vaultLoginItemTypeHandlers
+                         .onAuthenticatorHelpToolTipClick,
+@@ -157,6 +160,18 @@ fun VaultItemLoginContent(
+         }
+ 
+         loginItemState.uris.takeUnless { it.isEmpty() }?.let { uris ->
++            if (uris.any { it.uri.hasSuspiciousInternationalizedDomain() }) {
++                item(key = "suspiciousDomainWarning") {
++                    Spacer(modifier = Modifier.height(16.dp))
++                    BitwardenInfoCalloutCard(
++                        text = stringResource(BitwardenString.suspicious_domain_warning),
++                        modifier = Modifier
++                            .standardHorizontalMargin()
++                            .fillMaxWidth()
++                            .animateItem(),
++                    )
++                }
++            }
+             item(key = "urisHeader") {
+                 Spacer(modifier = Modifier.height(height = 16.dp))
+                 BitwardenListHeaderText(
+@@ -215,6 +230,13 @@ fun VaultItemLoginContent(
+     }
+ }
+ 
++private fun String.hasSuspiciousInternationalizedDomain(): Boolean =
++    runCatching { URI(this).host }
++        .getOrNull()
++        ?.split('.')
++        ?.any { label -> label.startsWith(prefix = "xn--", ignoreCase = true) }
++        ?: false
++
+ @Composable
+ private fun Fido2CredentialField(
+     creationDate: String,
+diff --git a/app/src/main/kotlin/com/x8bit/bitwarden/ui/vault/feature/item/VaultItemViewModel.kt b/app/src/main/kotlin/com/x8bit/bitwarden/ui/vault/feature/item/VaultItemViewModel.kt
+index 95876b31f568976e61bfb4bbfb50cd0ddf57bd79..3a9c7ff418c969751ce181e04de914fad1484e76 100644
+--- a/app/src/main/kotlin/com/x8bit/bitwarden/ui/vault/feature/item/VaultItemViewModel.kt
++++ b/app/src/main/kotlin/com/x8bit/bitwarden/ui/vault/feature/item/VaultItemViewModel.kt
+@@ -31,6 +31,7 @@ import com.x8bit.bitwarden.data.auth.repository.AuthRepository
+ import com.x8bit.bitwarden.data.auth.repository.model.BreachCountResult
+ import com.x8bit.bitwarden.data.auth.repository.model.UserState
+ import com.x8bit.bitwarden.data.billing.manager.PremiumStateManager
++import com.x8bit.bitwarden.data.community.CommunityFeatureAccess
+ import com.x8bit.bitwarden.data.platform.manager.FeatureFlagManager
+ import com.x8bit.bitwarden.data.platform.manager.clipboard.BitwardenClipboardManager
+ import com.x8bit.bitwarden.data.platform.manager.event.OrganizationEventManager
+@@ -753,7 +754,7 @@ class VaultItemViewModel @Inject constructor(
+     }
+ 
+     private fun handleArchiveClick() {
+-        if (!state.hasPremium) {
++        if (!CommunityFeatureAccess.archive && !state.hasPremium) {
+             mutableStateFlow.update {
+                 it.copy(
+                     dialog = VaultItemState.DialogState.RequiresPremium(
+diff --git a/app/src/main/kotlin/com/x8bit/bitwarden/ui/vault/feature/item/util/CipherViewExtensions.kt b/app/src/main/kotlin/com/x8bit/bitwarden/ui/vault/feature/item/util/CipherViewExtensions.kt
+index 7a356786f4f57f1d36a330cea4df0a27513f397a..2b1a4a51b9088cef12dad7006efdbc4a11e997f9 100644
+--- a/app/src/main/kotlin/com/x8bit/bitwarden/ui/vault/feature/item/util/CipherViewExtensions.kt
++++ b/app/src/main/kotlin/com/x8bit/bitwarden/ui/vault/feature/item/util/CipherViewExtensions.kt
+@@ -20,6 +20,7 @@ import com.bitwarden.vault.FieldView
+ import com.bitwarden.vault.IdentityView
+ import com.bitwarden.vault.LoginUriView
+ import com.x8bit.bitwarden.data.vault.repository.model.VaultData
++import com.x8bit.bitwarden.data.community.CommunityFeatureAccess
+ import com.x8bit.bitwarden.ui.vault.feature.attachments.util.isLargeFile
+ import com.x8bit.bitwarden.ui.vault.feature.item.VaultItemState
+ import com.x8bit.bitwarden.ui.vault.feature.item.model.TotpCodeItemData
+@@ -103,7 +104,9 @@ fun CipherView.toViewState(
+                             displaySize = requireNotNull(it.sizeName),
+                             url = requireNotNull(it.url),
+                             isLargeFile = it.isLargeFile(),
+-                            isDownloadAllowed = isPremiumUser || this.organizationId != null,
++                            isDownloadAllowed = CommunityFeatureAccess.attachments ||
++                                isPremiumUser ||
++                                this.organizationId != null,
+                         )
+                     }
+                 }
+@@ -148,7 +151,7 @@ fun CipherView.toViewState(
+                         )
+                         ?.let { BitwardenString.password_updated.asText(it) },
+                     isPremiumUser = isPremiumUser,
+-                    canViewTotpCode = isPremiumUser || this.organizationUseTotp,
++                    canViewTotpCode = true,
+                     totpCodeItemData = totpCodeItemData,
+                     fido2CredentialCreationDateText = loginValues
+                         .fido2Credentials
+diff --git a/app/src/main/kotlin/com/x8bit/bitwarden/ui/vault/feature/itemlisting/VaultItemListingViewModel.kt b/app/src/main/kotlin/com/x8bit/bitwarden/ui/vault/feature/itemlisting/VaultItemListingViewModel.kt
+index cc747a24ac827fbe04c1e4b810bda4a8230dd9d1..71aed19df682da2906886c314d219facbfbf5a83 100644
+--- a/app/src/main/kotlin/com/x8bit/bitwarden/ui/vault/feature/itemlisting/VaultItemListingViewModel.kt
++++ b/app/src/main/kotlin/com/x8bit/bitwarden/ui/vault/feature/itemlisting/VaultItemListingViewModel.kt
+@@ -47,6 +47,7 @@ import com.x8bit.bitwarden.data.autofill.manager.AutofillSelectionManager
+ import com.x8bit.bitwarden.data.autofill.model.AutofillSelectionData
+ import com.x8bit.bitwarden.data.autofill.util.isActiveWithFido2Credentials
+ import com.x8bit.bitwarden.data.billing.manager.PremiumStateManager
++import com.x8bit.bitwarden.data.community.CommunityFeatureAccess
+ import com.x8bit.bitwarden.data.credentials.manager.BitwardenCredentialManager
+ import com.x8bit.bitwarden.data.credentials.manager.OriginManager
+ import com.x8bit.bitwarden.data.credentials.model.CreateCredentialRequest
+@@ -905,7 +906,7 @@ class VaultItemListingViewModel @Inject constructor(
+             is VaultItemListingState.ItemListingType.Send -> {
+                 when (val sendType = itemListingType.toSendItemType()) {
+                     SendItemType.FILE -> {
+-                        if (state.isPremium) {
++                        if (CommunityFeatureAccess.fileSends || state.isPremium) {
+                             sendEvent(VaultItemListingEvent.NavigateToAddSendItem(sendType))
+                         } else {
+                             mutableStateFlow.update {
+@@ -1445,7 +1446,7 @@ class VaultItemListingViewModel @Inject constructor(
+     }
+ 
+     private fun handleArchiveClick(action: ListingItemOverflowAction.VaultAction.ArchiveClick) {
+-        if (!state.isPremium) {
++        if (!CommunityFeatureAccess.archive && !state.isPremium) {
+             mutableStateFlow.update {
+                 it.copy(dialogState = VaultItemListingState.DialogState.ArchiveRequiresPremium)
+             }
+@@ -2993,7 +2994,10 @@ data class VaultItemListingState(
+         get() = when (itemListingType) {
+             ItemListingType.Vault.Archive -> {
+                 (viewState as? ViewState.Content)?.let {
+-                    if (!isPremium && it.displayItemList.isNotEmpty()) {
++                    if (!CommunityFeatureAccess.archive &&
++                        !isPremium &&
++                        it.displayItemList.isNotEmpty()
++                    ) {
+                         ActionCardState.PremiumSubscription
+                     } else {
+                         null
+diff --git a/app/src/main/kotlin/com/x8bit/bitwarden/ui/vault/feature/util/CipherListViewExtensions.kt b/app/src/main/kotlin/com/x8bit/bitwarden/ui/vault/feature/util/CipherListViewExtensions.kt
+index ccc2ec49d2094a897da04f9853036107e03ede55..022f3128d82ce0774bcee66c942d33650d371271 100644
+--- a/app/src/main/kotlin/com/x8bit/bitwarden/ui/vault/feature/util/CipherListViewExtensions.kt
++++ b/app/src/main/kotlin/com/x8bit/bitwarden/ui/vault/feature/util/CipherListViewExtensions.kt
+@@ -16,7 +16,7 @@ import kotlinx.collections.immutable.toImmutableList
+ /**
+  * Creates the list of overflow actions to be displayed for a [CipherView].
+  */
+-@Suppress("CyclomaticComplexMethod", "LongMethod")
++@Suppress("CyclomaticComplexMethod", "LongMethod", "UnusedParameter")
+ fun CipherListView.toOverflowActions(
+     hasMasterPassword: Boolean,
+     isPremiumUser: Boolean,
+@@ -46,7 +46,6 @@ fun CipherListView.toOverflowActions(
+                     }
+                     .takeIf {
+                         this.type is CipherListViewType.Login &&
+-                            (this.organizationUseTotp || isPremiumUser) &&
+                             this.copyableFields.contains(CopyableCipherFields.LOGIN_TOTP)
+                     },
+                 ListingItemOverflowAction.VaultAction
+diff --git a/app/src/main/kotlin/com/x8bit/bitwarden/ui/vault/feature/vault/VaultViewModel.kt b/app/src/main/kotlin/com/x8bit/bitwarden/ui/vault/feature/vault/VaultViewModel.kt
+index d234c5be25d1238ce143618812fd043e83a8de7f..f3e8542e595a16aeb95ad721205b522cef051af5 100644
+--- a/app/src/main/kotlin/com/x8bit/bitwarden/ui/vault/feature/vault/VaultViewModel.kt
++++ b/app/src/main/kotlin/com/x8bit/bitwarden/ui/vault/feature/vault/VaultViewModel.kt
+@@ -37,6 +37,7 @@ import com.x8bit.bitwarden.data.autofill.manager.browser.BrowserAutofillDialogMa
+ import com.x8bit.bitwarden.data.billing.manager.PremiumStateManager
+ import com.x8bit.bitwarden.data.billing.manager.UPGRADED_TO_PREMIUM_LEARN_MORE_URL
+ import com.x8bit.bitwarden.data.billing.model.PremiumCard
++import com.x8bit.bitwarden.data.community.CommunityFeatureAccess
+ import com.x8bit.bitwarden.data.platform.manager.CredentialExchangeRegistryManager
+ import com.x8bit.bitwarden.data.platform.manager.FeatureFlagManager
+ import com.x8bit.bitwarden.data.platform.manager.FirstTimeActionManager
+@@ -733,7 +734,7 @@ class VaultViewModel @Inject constructor(
+         val archivedItemsCount = (state.viewState as? VaultState.ViewState.Content)
+             ?.archivedItemsCount
+             ?: 0
+-        if (state.isPremium || archivedItemsCount > 0) {
++        if (CommunityFeatureAccess.archive || state.isPremium || archivedItemsCount > 0) {
+             // We still navigate even if the user does not have Premium, since they have previously
+             // archived ciphers to view.
+             sendEvent(VaultEvent.NavigateToItemListing(VaultItemListingType.Archive))
+@@ -1085,7 +1086,7 @@ class VaultViewModel @Inject constructor(
+     }
+ 
+     private fun handleArchiveClick(action: ListingItemOverflowAction.VaultAction.ArchiveClick) {
+-        if (!state.isPremium) {
++        if (!CommunityFeatureAccess.archive && !state.isPremium) {
+             mutableStateFlow.update {
+                 it.copy(dialog = VaultState.DialogState.ArchiveRequiresPremium)
+             }
+@@ -1953,11 +1954,17 @@ data class VaultState(
+                             button = it.buttonText,
+                         )
+                     }
+-                    ?: ActionCardState.UpgradedToPremium
+-                        .takeIf { isUpgradedToPremiumCardEligible }
+-                    ?: ActionCardState.UpgradePremium.takeIf { premiumCard == PremiumCard.UPGRADE }
++                    ?: ActionCardState.UpgradedToPremium.takeIf {
++                        CommunityFeatureAccess.showPremiumPromotions &&
++                            isUpgradedToPremiumCardEligible
++                    }
++                    ?: ActionCardState.UpgradePremium.takeIf {
++                        CommunityFeatureAccess.showPremiumPromotions &&
++                            premiumCard == PremiumCard.UPGRADE
++                    }
+                     ?: ActionCardState.PremiumNeedsAttention.takeIf {
+-                        premiumCard == PremiumCard.NEEDS_ATTENTION
++                        CommunityFeatureAccess.showPremiumPromotions &&
++                            premiumCard == PremiumCard.NEEDS_ATTENTION
+                     }
+                     ?: ActionCardState.IntroducingArchive.takeIf {
+                         isPremium && !isIntroducingArchiveActionCardDismissed
+@@ -1974,9 +1981,13 @@ data class VaultState(
+                             button = it.buttonText,
+                         )
+                     }
+-                    ?: ActionCardState.UpgradePremium.takeIf { premiumCard == PremiumCard.UPGRADE }
++                    ?: ActionCardState.UpgradePremium.takeIf {
++                        CommunityFeatureAccess.showPremiumPromotions &&
++                            premiumCard == PremiumCard.UPGRADE
++                    }
+                     ?: ActionCardState.PremiumNeedsAttention.takeIf {
+-                        premiumCard == PremiumCard.NEEDS_ATTENTION
++                        CommunityFeatureAccess.showPremiumPromotions &&
++                            premiumCard == PremiumCard.NEEDS_ATTENTION
+                     }
+                     ?: ActionCardState.ImportItems.takeIf { showImportActionCard }
+             }
+diff --git a/app/src/main/kotlin/com/x8bit/bitwarden/ui/vault/feature/vault/util/VaultAddItemStateExtensions.kt b/app/src/main/kotlin/com/x8bit/bitwarden/ui/vault/feature/vault/util/VaultAddItemStateExtensions.kt
+index fd9dcec43ecc8ce0765f8faf72aee6e76d5962b0..0a8cba32a28e6d38915d65bbafdf9fef0979d274 100644
+--- a/app/src/main/kotlin/com/x8bit/bitwarden/ui/vault/feature/vault/util/VaultAddItemStateExtensions.kt
++++ b/app/src/main/kotlin/com/x8bit/bitwarden/ui/vault/feature/vault/util/VaultAddItemStateExtensions.kt
+@@ -19,6 +19,7 @@ import com.bitwarden.vault.PasswordHistoryView
+ import com.bitwarden.vault.SecureNoteType
+ import com.bitwarden.vault.SecureNoteView
+ import com.bitwarden.vault.SshKeyView
++import com.x8bit.bitwarden.data.community.CommunityFeatureAccess
+ import com.x8bit.bitwarden.ui.vault.feature.addedit.VaultAddEditState
+ import com.x8bit.bitwarden.ui.vault.feature.addedit.model.UriItem
+ import com.x8bit.bitwarden.ui.vault.model.VaultBankAccountType
+@@ -56,7 +57,9 @@ fun VaultAddEditState.ViewState.Content.toCipherView(
+         creationDate = common.originalCipher?.creationDate ?: clock.instant(),
+         deletedDate = common.originalCipher?.deletedDate,
+         revisionDate = common.originalCipher?.revisionDate ?: clock.instant(),
+-        archivedDate = common.originalCipher?.archivedDate?.takeIf { isPremiumUser },
++        archivedDate = common.originalCipher
++            ?.archivedDate
++            ?.takeIf { CommunityFeatureAccess.archive || isPremiumUser },
+         attachmentDecryptionFailures = common.originalCipher?.attachmentDecryptionFailures,
+         partial = false,
+ 
+diff --git a/app/src/main/kotlin/com/x8bit/bitwarden/ui/vault/feature/vault/util/VaultDataExtensions.kt b/app/src/main/kotlin/com/x8bit/bitwarden/ui/vault/feature/vault/util/VaultDataExtensions.kt
+index c1a32d8772eb9ad09e615103d344266342b66daa..ab3065557dfc684687d2d6013eed96b7d5a8e381 100644
+--- a/app/src/main/kotlin/com/x8bit/bitwarden/ui/vault/feature/vault/util/VaultDataExtensions.kt
++++ b/app/src/main/kotlin/com/x8bit/bitwarden/ui/vault/feature/vault/util/VaultDataExtensions.kt
+@@ -14,6 +14,7 @@ import com.bitwarden.vault.FolderView
+ import com.bitwarden.vault.LoginUriView
+ import com.x8bit.bitwarden.data.autofill.util.card
+ import com.x8bit.bitwarden.data.autofill.util.login
++import com.x8bit.bitwarden.data.community.CommunityFeatureAccess
+ import com.x8bit.bitwarden.data.platform.util.isActive
+ import com.x8bit.bitwarden.data.vault.repository.model.VaultData
+ import com.x8bit.bitwarden.data.vault.repository.util.toFailureCipherListView
+@@ -222,12 +223,18 @@ fun VaultData.toViewState(
+                     )
+                 },
+             trashItemsCount = allCipherViews.count { it.deletedDate != null },
+-            archivedItemsCount = archiveCount.takeIf { isPremium || archiveCount > 0 },
+-            archiveEndIcon = BitwardenDrawable.ic_locked.takeIf { !isPremium && archiveCount == 0 },
++            archivedItemsCount = archiveCount.takeIf {
++                CommunityFeatureAccess.canUseArchive(isPremium) || archiveCount > 0
++            },
++            archiveEndIcon = BitwardenDrawable.ic_locked.takeIf {
++                !CommunityFeatureAccess.canUseArchive(isPremium) && archiveCount == 0
++            },
+             archiveSubText = BitwardenString
+                 .premium_subscription_required
+                 .asText()
+-                .takeIf { !isPremium && archiveCount == 0 },
++                .takeIf {
++                    !CommunityFeatureAccess.canUseArchive(isPremium) && archiveCount == 0
++                },
+             showCardGroup = cardCount != 0 || restrictItemTypesPolicyOrgIds.isEmpty(),
+             showBankAccountGroup = isNewItemTypesEnabled,
+             showLicenseGroup = isNewItemTypesEnabled,
+diff --git a/app/src/main/kotlin/com/x8bit/bitwarden/ui/vault/feature/verificationcode/VerificationCodeViewModel.kt b/app/src/main/kotlin/com/x8bit/bitwarden/ui/vault/feature/verificationcode/VerificationCodeViewModel.kt
+index b040ffce1e067c6e5a9aee990ee0681e12c06941..22afa74db24cdcfc995aeebcc9f62a9fb2c8cc86 100644
+--- a/app/src/main/kotlin/com/x8bit/bitwarden/ui/vault/feature/verificationcode/VerificationCodeViewModel.kt
++++ b/app/src/main/kotlin/com/x8bit/bitwarden/ui/vault/feature/verificationcode/VerificationCodeViewModel.kt
+@@ -13,7 +13,6 @@ import com.bitwarden.ui.util.Text
+ import com.bitwarden.ui.util.asText
+ import com.bitwarden.ui.util.concat
+ import com.x8bit.bitwarden.data.auth.repository.AuthRepository
+-import com.x8bit.bitwarden.data.auth.repository.model.UserState
+ import com.x8bit.bitwarden.data.auth.repository.model.ValidatePasswordResult
+ import com.x8bit.bitwarden.data.platform.manager.clipboard.BitwardenClipboardManager
+ import com.x8bit.bitwarden.data.platform.repository.EnvironmentRepository
+@@ -82,9 +81,9 @@ class VerificationCodeViewModel @Inject constructor(
+ 
+         vaultRepository
+             .getAuthCodesFlow()
+-            .combine(authRepository.userStateFlow) { listDataState, userState ->
++            .combine(authRepository.userStateFlow) { listDataState, _ ->
+                 if (listDataState is DataState.Loaded) {
+-                    filterAuthCodesForDataState(listDataState.data, userState?.activeAccount)
++                    filterAuthCodesForDataState(listDataState.data)
+                 } else {
+                     listDataState
+                 }
+@@ -373,23 +372,10 @@ class VerificationCodeViewModel @Inject constructor(
+         }
+     }
+ 
+-    /**
+-     * Filter verification codes in the event that the user is not a "Premium" account but
+-     * has TOTP codes associated with a legacy organization.
+-     */
++    /** Returns every locally available verification code. */
+     private fun filterAuthCodesForDataState(
+         authCodes: List<VerificationCodeItem>,
+-        userAccount: UserState.Account?,
+-    ): DataState<List<VerificationCodeItem>> {
+-        val filteredAuthCodes = authCodes.mapNotNull { authCode ->
+-            if (userAccount?.isPremium == true) {
+-                authCode
+-            } else {
+-                authCode.takeIf { it.orgUsesTotp }
+-            }
+-        }
+-        return DataState.Loaded(filteredAuthCodes)
+-    }
++    ): DataState<List<VerificationCodeItem>> = DataState.Loaded(authCodes)
+ }
+ 
+ /**
+diff --git a/app/src/release/res/drawable/ic_launcher_foreground.xml b/app/src/release/res/drawable/ic_launcher_foreground.xml
+index e4d87cace9939027c45f35ac4f87927655b927eb..828cec938fca19ba5ecd504a8aa522b9393f210a 100644
+--- a/app/src/release/res/drawable/ic_launcher_foreground.xml
++++ b/app/src/release/res/drawable/ic_launcher_foreground.xml
+@@ -27,7 +27,7 @@
+             </aapt:attr>
+         </path>
+         <path
+-            android:fillColor="#ffffff"
++            android:fillColor="#FDB44B"
+             android:pathData="M481.4,102.2c-3.7,-3.7 -8.1,-5.6 -13.1,-5.6L131.7,96.6c-5.1,0 -9.4,1.9 -13.1,5.6C114.9,105.9 113,110.2 113,115.3v224.4c0,16.7 3.3,33.4 9.8,49.8c6.5,16.5 14.6,31.1 24.3,43.8c9.6,12.8 21.1,25.2 34.5,37.2c13.3,12.1 25.7,22.1 37,30.1c11.3,8 23.1,15.5 35.4,22.6c12.3,7.1 21,11.9 26.2,14.5c5.2,2.5 9.3,4.5 12.4,5.8c2.3,1.2 4.9,1.8 7.6,1.8c2.7,0 5.3,-0.6 7.6,-1.8c3.1,-1.4 7.3,-3.3 12.4,-5.8c5.2,-2.5 13.9,-7.4 26.2,-14.5c12.3,-7.1 24.1,-14.7 35.4,-22.6c11.3,-8 23.6,-18 37,-30.1c13.3,-12.1 24.8,-24.5 34.5,-37.2c9.6,-12.8 17.7,-27.4 24.2,-43.8c6.5,-16.5 9.8,-33.1 9.8,-49.8L487.3,115.3C487,110.2 485.1,105.9 481.4,102.2zM438,341.8C438,423 300,493 300,493L300,144.6h138C438,144.6 438,260.6 438,341.8z" />
+     </group>
+ </vector>
+diff --git a/app/src/test/kotlin/com/x8bit/bitwarden/data/autofill/manager/AutofillTotpManagerTest.kt b/app/src/test/kotlin/com/x8bit/bitwarden/data/autofill/manager/AutofillTotpManagerTest.kt
+index 35178941b1b8983d26479954fc5c7f669610c453..9dca1cf8b626ff09200ab0bbf3bd630b1e97e7f1 100644
+--- a/app/src/test/kotlin/com/x8bit/bitwarden/data/autofill/manager/AutofillTotpManagerTest.kt
++++ b/app/src/test/kotlin/com/x8bit/bitwarden/data/autofill/manager/AutofillTotpManagerTest.kt
+@@ -5,8 +5,6 @@ import com.bitwarden.ui.util.Text
+ import com.bitwarden.ui.util.asText
+ import com.bitwarden.vault.CipherView
+ import com.bitwarden.vault.LoginView
+-import com.x8bit.bitwarden.data.auth.repository.AuthRepository
+-import com.x8bit.bitwarden.data.auth.repository.model.UserState
+ import com.x8bit.bitwarden.data.platform.manager.clipboard.BitwardenClipboardManager
+ import com.x8bit.bitwarden.data.platform.repository.SettingsRepository
+ import com.x8bit.bitwarden.data.vault.repository.VaultRepository
+@@ -18,7 +16,6 @@ import io.mockk.just
+ import io.mockk.mockk
+ import io.mockk.runs
+ import io.mockk.verify
+-import kotlinx.coroutines.flow.MutableStateFlow
+ import kotlinx.coroutines.test.runTest
+ import org.junit.jupiter.api.Test
+ import java.time.Clock
+@@ -31,10 +28,6 @@ class AutofillTotpManagerTest {
+         every { id } returns "cipherId"
+         every { login } returns loginView
+     }
+-    private val mutableUserStateFlow = MutableStateFlow<UserState?>(value = null)
+-    private val authRepository: AuthRepository = mockk {
+-        every { userStateFlow } returns mutableUserStateFlow
+-    }
+     private val clipboardManager: BitwardenClipboardManager = mockk {
+         every { setText(text = any<String>(), toastDescriptorOverride = any<Text>()) } just runs
+     }
+@@ -44,7 +37,6 @@ class AutofillTotpManagerTest {
+     private val autofillTotpManager: AutofillTotpManager = AutofillTotpManagerImpl(
+         clock = FIXED_CLOCK,
+         clipboardManager = clipboardManager,
+-        authRepository = authRepository,
+         settingsRepository = settingsRepository,
+         vaultRepository = vaultRepository,
+     )
+@@ -68,13 +60,10 @@ class AutofillTotpManagerTest {
+ 
+     @Suppress("MaxLineLength")
+     @Test
+-    fun `tryCopyTotpToClipboard when isAutoCopyTotpDisabled is false, user not Premium and the organization does not use totp should do nothing`() =
++    fun `tryCopyTotpToClipboard when login has no totp should do nothing`() =
+         runTest {
+             every { settingsRepository.isAutoCopyTotpDisabled } returns false
+-            every { cipherView.organizationUseTotp } returns false
+-            mutableUserStateFlow.value = mockk {
+-                every { activeAccount.isPremium } returns false
+-            }
++            every { loginView.totp } returns null
+ 
+             autofillTotpManager.tryCopyTotpToClipboard(cipherView = cipherView)
+ 
+@@ -91,14 +80,11 @@ class AutofillTotpManagerTest {
+ 
+     @Suppress("MaxLineLength")
+     @Test
+-    fun `tryCopyTotpToClipboard when isAutoCopyTotpDisabled is false, has Premium and does not have totp should do nothing`() =
++    fun `tryCopyTotpToClipboard when cipher has no id should do nothing`() =
+         runTest {
+             every { settingsRepository.isAutoCopyTotpDisabled } returns false
+-            every { cipherView.organizationUseTotp } returns true
+-            mutableUserStateFlow.value = mockk {
+-                every { activeAccount.isPremium } returns true
+-            }
+-            every { loginView.totp } returns null
++            every { loginView.totp } returns TOTP_CODE
++            every { cipherView.id } returns null
+ 
+             autofillTotpManager.tryCopyTotpToClipboard(cipherView = cipherView)
+ 
+@@ -115,17 +101,13 @@ class AutofillTotpManagerTest {
+ 
+     @Suppress("MaxLineLength")
+     @Test
+-    fun `tryCopyTotpToClipboard when isAutoCopyTotpDisabled is false, has Premium and has totp should set the clipboard`() =
++    fun `tryCopyTotpToClipboard when enabled and login has totp should set the clipboard`() =
+         runTest {
+             val generateTotpResult = GenerateTotpResult.Success(
+                 code = TOTP_RESULT_VALUE,
+                 periodSeconds = 100,
+             )
+             every { settingsRepository.isAutoCopyTotpDisabled } returns false
+-            every { cipherView.organizationUseTotp } returns true
+-            mutableUserStateFlow.value = mockk {
+-                every { activeAccount.isPremium } returns true
+-            }
+             every { loginView.totp } returns TOTP_CODE
+             coEvery {
+                 vaultRepository.generateTotp(time = FIXED_CLOCK.instant(), cipherId = "cipherId")
+diff --git a/app/src/test/kotlin/com/x8bit/bitwarden/data/platform/datasource/disk/util/FakeSettingsDiskSource.kt b/app/src/test/kotlin/com/x8bit/bitwarden/data/platform/datasource/disk/util/FakeSettingsDiskSource.kt
+index fe9e9527a6cb123b2101ff759460055a2d6c4063..c03e084291b59b45926c077ab3ca1b4dd9789256 100644
+--- a/app/src/test/kotlin/com/x8bit/bitwarden/data/platform/datasource/disk/util/FakeSettingsDiskSource.kt
++++ b/app/src/test/kotlin/com/x8bit/bitwarden/data/platform/datasource/disk/util/FakeSettingsDiskSource.kt
+@@ -72,6 +72,7 @@ class FakeSettingsDiskSource(
+     private val storedDisableAutofillSavePrompt = mutableMapOf<String, Boolean?>()
+     private val storedPullToRefreshEnabled = mutableMapOf<String, Boolean?>()
+     private var storedIntroducingArchiveActionCardDismissed = mutableMapOf<String, Boolean?>()
++    private val storedCommunityArchivedCipherIds = mutableMapOf<String, Set<String>>()
+     private var storedCollapsedVaultSections = mutableMapOf<String, Set<VaultSection>?>()
+     private var storedPremiumUpgradeBannerDismissed = mutableMapOf<String, Boolean?>()
+     private val storedVaultPolicyBannerDismissedDate = mutableMapOf<String, Instant?>()
+@@ -389,6 +390,17 @@ class FakeSettingsDiskSource(
+         getMutableIntroducingArchiveActionCardDismissedFlow(userId = userId).tryEmit(isDismissed)
+     }
+ 
++    override fun getCommunityArchivedCipherIds(userId: String): Set<String> =
++        storedCommunityArchivedCipherIds[userId].orEmpty()
++
++    override fun storeCommunityArchivedCipherIds(userId: String, cipherIds: Set<String>?) {
++        if (cipherIds.isNullOrEmpty()) {
++            storedCommunityArchivedCipherIds.remove(userId)
++        } else {
++            storedCommunityArchivedCipherIds[userId] = cipherIds
++        }
++    }
++
+     override fun getCollapsedVaultSections(userId: String): Set<VaultSection>? =
+         storedCollapsedVaultSections[userId]
+ 
+diff --git a/app/src/test/kotlin/com/x8bit/bitwarden/data/vault/datasource/disk/VaultDiskSourceTest.kt b/app/src/test/kotlin/com/x8bit/bitwarden/data/vault/datasource/disk/VaultDiskSourceTest.kt
+index 1724605f37e1debc4d326098eec54b394d4d0565..4972bdf6dc2e17d769df5e54103ac8bd563afd90 100644
+--- a/app/src/test/kotlin/com/x8bit/bitwarden/data/vault/datasource/disk/VaultDiskSourceTest.kt
++++ b/app/src/test/kotlin/com/x8bit/bitwarden/data/vault/datasource/disk/VaultDiskSourceTest.kt
+@@ -11,6 +11,7 @@ import com.bitwarden.network.model.createMockDomains
+ import com.bitwarden.network.model.createMockFolder
+ import com.bitwarden.network.model.createMockSend
+ import com.bitwarden.network.model.createMockSyncResponse
++import com.x8bit.bitwarden.data.platform.datasource.disk.util.FakeSettingsDiskSource
+ import com.x8bit.bitwarden.data.vault.datasource.disk.dao.FakeCiphersDao
+ import com.x8bit.bitwarden.data.vault.datasource.disk.dao.FakeCollectionsDao
+ import com.x8bit.bitwarden.data.vault.datasource.disk.dao.FakeDomainsDao
+@@ -60,6 +61,7 @@ class VaultDiskSourceTest {
+             sendsDao = sendsDao,
+             json = json,
+             dispatcherManager = dispatcherManager,
++            settingsDiskSource = FakeSettingsDiskSource(),
+         )
+     }
+ 
+diff --git a/app/src/test/kotlin/com/x8bit/bitwarden/data/vault/manager/CipherManagerTest.kt b/app/src/test/kotlin/com/x8bit/bitwarden/data/vault/manager/CipherManagerTest.kt
+index d3d36cd65c16eaaaaad327305f3a61044da99910..6f98e019b604f775e04ed01b587920e99410bfd0 100644
+--- a/app/src/test/kotlin/com/x8bit/bitwarden/data/vault/manager/CipherManagerTest.kt
++++ b/app/src/test/kotlin/com/x8bit/bitwarden/data/vault/manager/CipherManagerTest.kt
+@@ -126,6 +126,7 @@ class CipherManagerTest {
+         fileManager = fileManager,
+         clock = clock,
+         reviewPromptManager = reviewPromptManager,
++        communityArchiveEnabled = false,
+         pushManager = pushManager,
+         dispatcherManager = FakeDispatcherManager(),
+     )
+diff --git a/app/src/test/kotlin/com/x8bit/bitwarden/data/vault/repository/VaultRepositoryTest.kt b/app/src/test/kotlin/com/x8bit/bitwarden/data/vault/repository/VaultRepositoryTest.kt
+index 4325e964a90745c082e5cc17253aa2989c771f07..ead5210301bb373d897d45e7c830af7634168672 100644
+--- a/app/src/test/kotlin/com/x8bit/bitwarden/data/vault/repository/VaultRepositoryTest.kt
++++ b/app/src/test/kotlin/com/x8bit/bitwarden/data/vault/repository/VaultRepositoryTest.kt
+@@ -1336,7 +1336,7 @@ class VaultRepositoryTest {
+ 
+     @Suppress("MaxLineLength")
+     @Test
+-    fun `getValidTotpCipherIds with non-premium user should return ids for only organizationUseTotp ciphers`() =
++    fun `getValidTotpCipherIds with non-premium user should return all valid totp ids`() =
+         runTest {
+             val totpResponse = TotpResponse("Testcode", 30u)
+             coEvery {
+@@ -1358,7 +1358,7 @@ class VaultRepositoryTest {
+                 time = Instant.parse("2023-10-27T12:00:00Z"),
+             )
+ 
+-            assertEquals(setOf("mockId-1"), result)
++            assertEquals(setOf("mockId-1", "mockId-2"), result)
+         }
+ 
+     @Test
+diff --git a/app/src/test/kotlin/com/x8bit/bitwarden/ui/platform/feature/search/SearchViewModelTest.kt b/app/src/test/kotlin/com/x8bit/bitwarden/ui/platform/feature/search/SearchViewModelTest.kt
+index ee07d0efde8383d00eacab5f741dcd4677145005..222fad622033506598b9d3be9b6c991e88c729bc 100644
+--- a/app/src/test/kotlin/com/x8bit/bitwarden/ui/platform/feature/search/SearchViewModelTest.kt
++++ b/app/src/test/kotlin/com/x8bit/bitwarden/ui/platform/feature/search/SearchViewModelTest.kt
+@@ -337,27 +337,29 @@ class SearchViewModelTest : BaseViewModelTest() {
+         }
+ 
+     @Test
+-    fun `ArchiveClick without Premium should show ArchiveRequiresPremium dialog`() = runTest {
++    fun `ArchiveClick without Premium should archive the item`() = runTest {
+         mutableUserStateFlow.update {
+             it?.copy(accounts = listOf(DEFAULT_ACCOUNT.copy(isPremium = false)))
+         }
++        val cipherView = createMockCipherView(number = 1, clock = clock)
++        coEvery {
++            vaultRepository.archiveCipher(cipherId = "mockId-1", cipherView = cipherView)
++        } returns ArchiveCipherResult.Success
+         val viewModel = createViewModel(initialState = null)
+ 
+-        viewModel.trySendAction(
+-            SearchAction.OverflowOptionClick(
+-                overflowAction = ListingItemOverflowAction.VaultAction.ArchiveClick(
+-                    cipherId = "mockId-1",
++        viewModel.eventFlow.test {
++            viewModel.trySendAction(
++                SearchAction.OverflowOptionClick(
++                    overflowAction = ListingItemOverflowAction.VaultAction.ArchiveClick(
++                        cipherId = "mockId-1",
++                    ),
+                 ),
+-            ),
+-        )
+-
+-        assertEquals(
+-            DEFAULT_STATE.copy(
+-                isPremium = false,
+-                dialogState = SearchState.DialogState.ArchiveRequiresPremium,
+-            ),
+-            viewModel.stateFlow.value,
+-        )
++            )
++            assertEquals(
++                SearchEvent.ShowSnackbar(BitwardenString.item_moved_to_archived.asText()),
++                awaitItem(),
++            )
++        }
+     }
+ 
+     @Test
+diff --git a/app/src/test/kotlin/com/x8bit/bitwarden/ui/platform/feature/settings/SettingsScreenTest.kt b/app/src/test/kotlin/com/x8bit/bitwarden/ui/platform/feature/settings/SettingsScreenTest.kt
+index 8b0566385d8507dc658da42ea6cdc0a92467f84b..a912794d2662e491144cc37767348e7bf08b2b81 100644
+--- a/app/src/test/kotlin/com/x8bit/bitwarden/ui/platform/feature/settings/SettingsScreenTest.kt
++++ b/app/src/test/kotlin/com/x8bit/bitwarden/ui/platform/feature/settings/SettingsScreenTest.kt
+@@ -1,7 +1,5 @@
+ package com.x8bit.bitwarden.ui.platform.feature.settings
+ 
+-import androidx.compose.ui.test.assertIsDisplayed
+-import androidx.compose.ui.test.onAllNodesWithText
+ import androidx.compose.ui.test.onNodeWithContentDescription
+ import androidx.compose.ui.test.onNodeWithText
+ import androidx.compose.ui.test.performClick
+@@ -44,6 +42,7 @@ class SettingsScreenTest : BitwardenComposeTest() {
+                 onNavigateToAccountSecurity = { haveCalledNavigateToAccountSecurity = true },
+                 onNavigateToAppearance = { haveCalledNavigateToAppearance = true },
+                 onNavigateToAutoFill = { haveCalledNavigateToAutoFill = true },
++                onNavigateToVaultHealth = { },
+                 onNavigateToOther = { haveCalledNavigateToOther = true },
+                 onNavigateToVault = { haveCalledNavigateToVault = true },
+                 onNavigateBack = { haveCalledNavigateBack = true },
+@@ -243,20 +242,14 @@ class SettingsScreenTest : BitwardenComposeTest() {
+     }
+ 
+     @Test
+-    fun `UpgradedToPremium action card should display when eligible and post-auth`() {
++    fun `UpgradedToPremium action card should not display when eligible and post-auth`() {
+         mutableStateFlow.update {
+             it.copy(isPreAuth = false, isUpgradedToPremiumCardEligible = true)
+         }
+ 
+         composeTestRule
+             .onNodeWithText(text = "Upgraded to Premium")
+-            .assertIsDisplayed()
+-        composeTestRule
+-            .onNodeWithText(text = "Learn more")
+-            .assertIsDisplayed()
+-        composeTestRule
+-            .onNodeWithContentDescription(label = "Learn more, External link")
+-            .assertIsDisplayed()
++            .assertDoesNotExist()
+     }
+ 
+     @Test
+@@ -269,38 +262,6 @@ class SettingsScreenTest : BitwardenComposeTest() {
+             .onNodeWithText(text = "Upgraded to Premium")
+             .assertDoesNotExist()
+     }
+-
+-    @Test
+-    fun `UpgradedToPremium action card CTA click should send UpgradedToPremiumCardClick`() {
+-        every { viewModel.trySendAction(SettingsAction.UpgradedToPremiumCardClick) } just runs
+-        mutableStateFlow.update {
+-            it.copy(isPreAuth = false, isUpgradedToPremiumCardEligible = true)
+-        }
+-
+-        composeTestRule
+-            .onNodeWithText(text = "Learn more")
+-            .performClick()
+-
+-        verify(exactly = 1) {
+-            viewModel.trySendAction(SettingsAction.UpgradedToPremiumCardClick)
+-        }
+-    }
+-
+-    @Test
+-    fun `UpgradedToPremium action card dismiss click should send UpgradedToPremiumCardDismiss`() {
+-        every { viewModel.trySendAction(SettingsAction.UpgradedToPremiumCardDismiss) } just runs
+-        mutableStateFlow.update {
+-            it.copy(isPreAuth = false, isUpgradedToPremiumCardEligible = true)
+-        }
+-
+-        composeTestRule
+-            .onNodeWithContentDescription(label = "Close")
+-            .performClick()
+-
+-        verify(exactly = 1) {
+-            viewModel.trySendAction(SettingsAction.UpgradedToPremiumCardDismiss)
+-        }
+-    }
+ }
+ 
+ private val DEFAULT_STATE = SettingsState(
+diff --git a/app/src/test/kotlin/com/x8bit/bitwarden/ui/platform/feature/settings/SettingsViewModelTest.kt b/app/src/test/kotlin/com/x8bit/bitwarden/ui/platform/feature/settings/SettingsViewModelTest.kt
+index 6e99357fac9a702ad6f1cc141fb460570b0ef9b7..49776c20e8759a760b365e55865b57fb9e75cd03 100644
+--- a/app/src/test/kotlin/com/x8bit/bitwarden/ui/platform/feature/settings/SettingsViewModelTest.kt
++++ b/app/src/test/kotlin/com/x8bit/bitwarden/ui/platform/feature/settings/SettingsViewModelTest.kt
+@@ -223,10 +223,10 @@ class SettingsViewModelTest : BaseViewModelTest() {
+     }
+ 
+     @Test
+-    fun `Plan row should be hidden when plan row eligibility is false`() {
++    fun `OpenWarden row should appear when plan row eligibility is false`() {
+         mutablePlanRowEligibleFlow.value = false
+         val viewModel = createViewModel()
+-        assertFalse(
++        assertTrue(
+             viewModel.stateFlow.value.settingRows
+                 .contains(Settings.PLAN),
+         )
+@@ -255,11 +255,11 @@ class SettingsViewModelTest : BaseViewModelTest() {
+     }
+ 
+     @Test
+-    fun `Plan row should update when plan row eligibility changes to true`() =
++    fun `OpenWarden row should remain visible when plan row eligibility changes`() =
+         runTest {
+             mutablePlanRowEligibleFlow.value = false
+             val viewModel = createViewModel()
+-            assertFalse(
++            assertTrue(
+                 viewModel.stateFlow.value.settingRows
+                     .contains(Settings.PLAN),
+             )
+@@ -293,10 +293,10 @@ class SettingsViewModelTest : BaseViewModelTest() {
+     }
+ 
+     @Test
+-    fun `shouldShowUpgradedToPremiumCard is true post-auth when eligible`() = runTest {
++    fun `shouldShowUpgradedToPremiumCard is false post-auth when eligible`() = runTest {
+         mutableUpgradedToPremiumCardEligibleFlow.value = true
+         val viewModel = createViewModel(isPreAuth = false)
+-        assertTrue(viewModel.stateFlow.value.shouldShowUpgradedToPremiumCard)
++        assertFalse(viewModel.stateFlow.value.shouldShowUpgradedToPremiumCard)
+     }
+ 
+     @Test
+@@ -326,18 +326,18 @@ class SettingsViewModelTest : BaseViewModelTest() {
+     }
+ 
+     @Test
+-    fun `Plan row should be hidden when self-hosted status flow emits true`() {
++    fun `OpenWarden row should appear when self-hosted status flow emits true`() {
+         mutablePlanRowEligibleFlow.value = true
+         mutableIsSelfHostedFlow.value = true
+         val viewModel = createViewModel()
+-        assertFalse(
++        assertTrue(
+             viewModel.stateFlow.value.settingRows
+                 .contains(Settings.PLAN),
+         )
+     }
+ 
+     @Test
+-    fun `Plan row should update when self-hosted status flow flips to true`() = runTest {
++    fun `OpenWarden row should stay visible when self-hosted status flips to true`() = runTest {
+         mutablePlanRowEligibleFlow.value = true
+         val viewModel = createViewModel()
+         assertTrue(
+@@ -347,20 +347,20 @@ class SettingsViewModelTest : BaseViewModelTest() {
+ 
+         mutableIsSelfHostedFlow.value = true
+         viewModel.stateFlow.test {
+-            assertFalse(
++            assertTrue(
+                 awaitItem().settingRows.contains(Settings.PLAN),
+             )
+         }
+     }
+ 
+     @Test
+-    fun `Plan row should re-appear when self-hosted status flow flips back to false`() = runTest {
++    fun `OpenWarden row remains visible after self-hosted status flips to false`() = runTest {
+         // Simulates the debug-disable flag being toggled on while self-hosted: the flow emits
+         // false even though the environment is still self-hosted.
+         mutablePlanRowEligibleFlow.value = true
+         mutableIsSelfHostedFlow.value = true
+         val viewModel = createViewModel()
+-        assertFalse(
++        assertTrue(
+             viewModel.stateFlow.value.settingRows
+                 .contains(Settings.PLAN),
+         )
+diff --git a/app/src/test/kotlin/com/x8bit/bitwarden/ui/platform/feature/settings/about/AboutScreenTest.kt b/app/src/test/kotlin/com/x8bit/bitwarden/ui/platform/feature/settings/about/AboutScreenTest.kt
+index 9a5ff2dce87f0ede7f89024ceb8c8680a4362bfb..47a4aea9d4ce699e699d09108d5cf380d2ff359f 100644
+--- a/app/src/test/kotlin/com/x8bit/bitwarden/ui/platform/feature/settings/about/AboutScreenTest.kt
++++ b/app/src/test/kotlin/com/x8bit/bitwarden/ui/platform/feature/settings/about/AboutScreenTest.kt
+@@ -286,10 +286,10 @@ class AboutScreenTest : BitwardenComposeTest() {
+         val currentYear = Year.now(fixedClock).value
+ 
+         mutableStateFlow.update {
+-            it.copy(copyrightInfo = "© Bitwarden Inc. 2015-$currentYear".asText())
++            it.copy(copyrightInfo = "© OpenWarden contributors $currentYear".asText())
+         }
+ 
+-        composeTestRule.onNodeWithText("© Bitwarden Inc. 2015-$currentYear")
++        composeTestRule.onNodeWithText("© OpenWarden contributors $currentYear")
+             .performScrollTo()
+             .assertIsDisplayed()
+     }
+diff --git a/app/src/test/kotlin/com/x8bit/bitwarden/ui/platform/feature/settings/about/AboutViewModelTest.kt b/app/src/test/kotlin/com/x8bit/bitwarden/ui/platform/feature/settings/about/AboutViewModelTest.kt
+index 272c01ff02a40f4088c1880443c3eb1ced8c39d6..c8768a272db24dd9a5070fd0e6e70f3493940c57 100644
+--- a/app/src/test/kotlin/com/x8bit/bitwarden/ui/platform/feature/settings/about/AboutViewModelTest.kt
++++ b/app/src/test/kotlin/com/x8bit/bitwarden/ui/platform/feature/settings/about/AboutViewModelTest.kt
+@@ -254,7 +254,7 @@ private val DEFAULT_ABOUT_STATE: AboutState = AboutState(
+     serverData = "\uD83C\uDF29 Server: 2025.7.1".asText(),
+     deviceData = "<device_data>".asText(),
+     ciData = "<ci_info>".asText(),
+-    copyrightInfo = "© Bitwarden Inc. 2015-${Year.now(FIXED_CLOCK).value}".asText(),
++    copyrightInfo = "© OpenWarden contributors ${Year.now(FIXED_CLOCK).value}".asText(),
+     isSubmitCrashLogsEnabled = false,
+     shouldShowCrashLogsButton = true,
+     isFlightRecorderEnabled = false,
+diff --git a/app/src/test/kotlin/com/x8bit/bitwarden/ui/tools/feature/send/SendViewModelTest.kt b/app/src/test/kotlin/com/x8bit/bitwarden/ui/tools/feature/send/SendViewModelTest.kt
+index 620b252ee4dd9298dc250151df53dcf535fa67ba..ab84e873ea89f0b7a57bfe0a93b244517453a1b6 100644
+--- a/app/src/test/kotlin/com/x8bit/bitwarden/ui/tools/feature/send/SendViewModelTest.kt
++++ b/app/src/test/kotlin/com/x8bit/bitwarden/ui/tools/feature/send/SendViewModelTest.kt
+@@ -160,7 +160,7 @@ class SendViewModelTest : BaseViewModelTest() {
+     }
+ 
+     @Test
+-    fun `AddSendClick should require premium when only file sends are allowed`() {
++    fun `AddSendClick should open file send when only file sends are allowed`() = runTest {
+         mutableEffectiveSendPolicyFlow.value = DEFAULT_EFFECTIVE_SEND_POLICY.copy(
+             allowedSendTypes = listOf(SendTypeJson.FILE),
+         )
+@@ -169,13 +169,12 @@ class SendViewModelTest : BaseViewModelTest() {
+         )
+         val viewModel = createViewModel()
+ 
+-        viewModel.trySendAction(SendAction.AddSendClick)
+-
++        viewModel.eventFlow.test {
++            viewModel.trySendAction(SendAction.AddSendClick)
++            assertEquals(SendEvent.NavigateNewSend(sendType = SendItemType.FILE), awaitItem())
++        }
+         assertEquals(
+-            DEFAULT_STATE.copy(
+-                dialogState = SendState.DialogState.FileTypeRequiresPremium,
+-                singleAllowedSendType = SendItemType.FILE,
+-            ),
++            DEFAULT_STATE.copy(singleAllowedSendType = SendItemType.FILE),
+             viewModel.stateFlow.value,
+         )
+     }
+@@ -268,27 +267,27 @@ class SendViewModelTest : BaseViewModelTest() {
+     }
+ 
+     @Test
+-    fun `AddSendSelected file without Premium and upgrade unavailable shows Error dialog`() {
++    fun `AddSendSelected file without Premium and upgrade unavailable opens file send`() = runTest {
+         every { premiumStateManager.isInAppUpgradeAvailable() } returns false
+         val state = DEFAULT_STATE.copy(isPremiumUser = false, policyDisablesSend = false)
+         val viewModel = createViewModel(state = state)
+-        viewModel.trySendAction(SendAction.AddSendSelected(sendType = SendItemType.FILE))
+-        assertEquals(
+-            state.copy(dialogState = SendState.DialogState.FileTypeRequiresPremium),
+-            viewModel.stateFlow.value,
+-        )
++        viewModel.eventFlow.test {
++            viewModel.trySendAction(SendAction.AddSendSelected(sendType = SendItemType.FILE))
++            assertEquals(SendEvent.NavigateNewSend(sendType = SendItemType.FILE), awaitItem())
++        }
++        assertEquals(state, viewModel.stateFlow.value)
+     }
+ 
+     @Test
+-    fun `AddSendSelected file without Premium with upgrade available shows premium dialog`() {
++    fun `AddSendSelected file without Premium with upgrade available opens file send`() = runTest {
+         every { premiumStateManager.isInAppUpgradeAvailable() } returns true
+         val state = DEFAULT_STATE.copy(isPremiumUser = false, policyDisablesSend = false)
+         val viewModel = createViewModel(state = state)
+-        viewModel.trySendAction(SendAction.AddSendSelected(sendType = SendItemType.FILE))
+-        assertEquals(
+-            state.copy(dialogState = SendState.DialogState.FileTypeRequiresPremium),
+-            viewModel.stateFlow.value,
+-        )
++        viewModel.eventFlow.test {
++            viewModel.trySendAction(SendAction.AddSendSelected(sendType = SendItemType.FILE))
++            assertEquals(SendEvent.NavigateNewSend(sendType = SendItemType.FILE), awaitItem())
++        }
++        assertEquals(state, viewModel.stateFlow.value)
+     }
+ 
+     @Test
+diff --git a/app/src/test/kotlin/com/x8bit/bitwarden/ui/tools/feature/send/addedit/AddEditSendViewModelTest.kt b/app/src/test/kotlin/com/x8bit/bitwarden/ui/tools/feature/send/addedit/AddEditSendViewModelTest.kt
+index 95538ea41442a0718cac3fef4639ee96849ef56b..ef74cf646d711eb0bbfa52fd032abfd2de7b0cbd 100644
+--- a/app/src/test/kotlin/com/x8bit/bitwarden/ui/tools/feature/send/addedit/AddEditSendViewModelTest.kt
++++ b/app/src/test/kotlin/com/x8bit/bitwarden/ui/tools/feature/send/addedit/AddEditSendViewModelTest.kt
+@@ -1200,7 +1200,7 @@ class AddEditSendViewModelTest : BaseViewModelTest() {
+     }
+ 
+     @Test
+-    fun `SaveClick for file without Premium show error dialog`() {
++    fun `SaveClick for file without Premium validates the file`() {
+         mutableUserStateFlow.value = DEFAULT_USER_STATE.copy(
+             accounts = listOf(DEFAULT_ACCOUNT.copy(isPremium = false)),
+         )
+@@ -1222,8 +1222,9 @@ class AddEditSendViewModelTest : BaseViewModelTest() {
+ 
+         assertEquals(
+             initialState.copy(
+-                dialogState = AddEditSendState.DialogState.PremiumRequired(
+-                    message = BitwardenString.send_file_premium_required.asText(),
++                dialogState = AddEditSendState.DialogState.Error(
++                    title = BitwardenString.an_error_has_occurred.asText(),
++                    message = BitwardenString.you_must_attach_a_file_to_save_this_send.asText(),
+                 ),
+             ),
+             viewModel.stateFlow.value,
+@@ -2108,7 +2109,8 @@ class AddEditSendViewModelTest : BaseViewModelTest() {
+     }
+ 
+     @Test
+-    fun `AuthTypeSelect with Email auth without Premium should show Premium dialog`() = runTest {
++    fun `AuthTypeSelect with Email auth without Premium should allow selection`() = runTest {
++        every { UUID.randomUUID().toString() } returns "uuid"
+         val nonPremiumState = DEFAULT_STATE.copy(isPremium = false)
+         val viewModel = createViewModel(nonPremiumState)
+ 
+@@ -2118,10 +2120,14 @@ class AddEditSendViewModelTest : BaseViewModelTest() {
+             val newState = awaitItem()
+             assertEquals(
+                 nonPremiumState.copy(
+-                    dialogState = AddEditSendState.DialogState.PremiumRequired(
+-                        message = BitwardenString
+-                            .sharing_with_specific_people_is_a_premium_feature
+-                            .asText(),
++                    viewState = DEFAULT_VIEW_STATE.copy(
++                        common = DEFAULT_COMMON_STATE.copy(
++                            sendAuth = SendAuth.Email(
++                                emails = persistentListOf(
++                                    AuthEmail(id = "uuid", value = ""),
++                                ),
++                            ),
++                        ),
+                     ),
+                 ),
+                 newState,
+diff --git a/app/src/test/kotlin/com/x8bit/bitwarden/ui/vault/feature/addedit/VaultAddEditViewModelTest.kt b/app/src/test/kotlin/com/x8bit/bitwarden/ui/vault/feature/addedit/VaultAddEditViewModelTest.kt
+index f98d3bff4288c03bfea52645b2ebbe5332776097..c34c53e23ccc953aaadacf43fad077985fd0c8be 100644
+--- a/app/src/test/kotlin/com/x8bit/bitwarden/ui/vault/feature/addedit/VaultAddEditViewModelTest.kt
++++ b/app/src/test/kotlin/com/x8bit/bitwarden/ui/vault/feature/addedit/VaultAddEditViewModelTest.kt
+@@ -2700,7 +2700,7 @@ class VaultAddEditViewModelTest : BaseViewModelTest() {
+     }
+ 
+     @Test
+-    fun `ArchiveClick without Premium should show ArchiveRequiresPremium dialog`() = runTest {
++    fun `ArchiveClick without Premium should archive the item`() = runTest {
+         val cipherListView = createMockCipherListView(number = 1, isArchived = false)
+         val cipherView = createMockCipherView(number = 1, isArchived = false)
+         val vaultAddEditType = VaultAddEditType.EditItem(DEFAULT_ITEM_ID)
+@@ -2719,44 +2719,20 @@ class VaultAddEditViewModelTest : BaseViewModelTest() {
+                 vaultItemCipherType = VaultItemCipherType.LOGIN,
+             ),
+         )
++        coEvery {
++            vaultRepository.archiveCipher(cipherId = "mockId-1", cipherView = cipherView)
++        } returns ArchiveCipherResult.Success
+ 
+-        viewModel.trySendAction(VaultAddEditAction.Common.ArchiveClick)
+-
+-        assertEquals(
+-            createVaultAddItemState(
+-                hasPremium = false,
+-                vaultAddEditType = vaultAddEditType,
+-                dialogState = VaultAddEditState.DialogState.ArchiveRequiresPremium,
+-                commonContentViewState = createCommonContentViewState(
+-                    name = "mockName-1",
+-                    originalCipher = createMockCipherView(number = 1),
+-                    notes = "mockNotes-1",
+-                    customFieldData = listOf(
+-                        VaultAddEditState.Custom.HiddenField(
+-                            itemId = "testId",
+-                            name = "mockName-1",
+-                            value = "mockValue-1",
+-                        ),
+-                    ),
+-                ),
+-                typeContentViewState = createLoginTypeContentViewState(
+-                    username = "mockUsername-1",
+-                    password = "mockPassword-1",
+-                    uri = listOf(
+-                        UriItem(
+-                            id = "testId",
+-                            uri = "www.mockuri1.com",
+-                            match = UriMatchType.HOST,
+-                            checksum = "mockUriChecksum-1",
+-                        ),
+-                    ),
+-                    totpCode = "mockTotp-1",
+-                    canViewPassword = true,
+-                    fido2CredentialCreationDateTime = null,
+-                ),
+-            ),
+-            viewModel.stateFlow.value,
+-        )
++        viewModel.eventFlow.test {
++            viewModel.trySendAction(VaultAddEditAction.Common.ArchiveClick)
++            assertEquals(VaultAddEditEvent.NavigateBack, awaitItem())
++        }
++        verify(exactly = 1) {
++            snackbarRelayManager.sendSnackbarData(
++                data = BitwardenSnackbarData(BitwardenString.item_moved_to_archived.asText()),
++                relay = SnackbarRelay.CIPHER_ARCHIVED,
++            )
++        }
+     }
+ 
+     @Suppress("MaxLineLength")
+diff --git a/app/src/test/kotlin/com/x8bit/bitwarden/ui/vault/feature/attachments/AttachmentsViewModelTest.kt b/app/src/test/kotlin/com/x8bit/bitwarden/ui/vault/feature/attachments/AttachmentsViewModelTest.kt
+index 675470f8dba6b2b4e3261883e43de0ebc1fba785..b1bfb5693a6879dce0a16454d4cd102ae015903e 100644
+--- a/app/src/test/kotlin/com/x8bit/bitwarden/ui/vault/feature/attachments/AttachmentsViewModelTest.kt
++++ b/app/src/test/kotlin/com/x8bit/bitwarden/ui/vault/feature/attachments/AttachmentsViewModelTest.kt
+@@ -107,7 +107,7 @@ class AttachmentsViewModelTest : BaseViewModelTest() {
+     }
+ 
+     @Test
+-    fun `ItemClick should display RequiresPremium dialog when user is not Premium`() = runTest {
++    fun `ItemClick should emit NavigateToPreview when user is not Premium`() = runTest {
+         mutableUserStateFlow.update {
+             DEFAULT_USER_STATE.copy(
+                 accounts = listOf(DEFAULT_ACCOUNT.copy(isPremium = false)),
+@@ -118,13 +118,19 @@ class AttachmentsViewModelTest : BaseViewModelTest() {
+             viewModel.trySendAction(
+                 AttachmentsAction.ItemClick(attachment = DEFAULT_ATTACHMENT_ITEM),
+             )
+-            expectNoEvents()
++            assertEquals(
++                AttachmentsEvent.NavigateToPreview(
++                    cipherId = DEFAULT_STATE.cipherId,
++                    attachmentId = DEFAULT_ATTACHMENT_ITEM.id,
++                    fileName = DEFAULT_ATTACHMENT_ITEM.title,
++                    displaySize = DEFAULT_ATTACHMENT_ITEM.displaySize,
++                    isLargeFile = false,
++                ),
++                awaitItem(),
++            )
+         }
+         assertEquals(
+-            DEFAULT_STATE.copy(
+-                dialogState = AttachmentsState.DialogState.RequiresPremium,
+-                isPremiumUser = false,
+-            ),
++            DEFAULT_STATE.copy(isPremiumUser = false),
+             viewModel.stateFlow.value,
+         )
+     }
+@@ -219,7 +225,7 @@ class AttachmentsViewModelTest : BaseViewModelTest() {
+     }
+ 
+     @Test
+-    fun `SaveClick should display error dialog when user is not Premium`() = runTest {
++    fun `SaveClick should validate selected file when user is not Premium`() = runTest {
+         val cipherView = createMockCipherView(number = 1)
+         mutableVaultItemStateFlow.value = DataState.Loaded(cipherView)
+         mutableUserStateFlow.value = null
+@@ -229,7 +235,12 @@ class AttachmentsViewModelTest : BaseViewModelTest() {
+         assertEquals(
+             DEFAULT_STATE.copy(
+                 viewState = DEFAULT_CONTENT_WITH_ATTACHMENTS,
+-                dialogState = AttachmentsState.DialogState.RequiresPremium,
++                dialogState = AttachmentsState.DialogState.Error(
++                    title = BitwardenString.an_error_has_occurred.asText(),
++                    message = BitwardenString.validation_field_required
++                        .asText(BitwardenString.file.asText()),
++                    throwable = null,
++                ),
+                 isPremiumUser = false,
+             ),
+             viewModel.stateFlow.value,
+diff --git a/app/src/test/kotlin/com/x8bit/bitwarden/ui/vault/feature/item/VaultItemViewModelTest.kt b/app/src/test/kotlin/com/x8bit/bitwarden/ui/vault/feature/item/VaultItemViewModelTest.kt
+index c7efd45e9ec7eccf76bc568a7b9d6677d0bdc646..724f12602b522dce5ba31dfe25975ad50e469b32 100644
+--- a/app/src/test/kotlin/com/x8bit/bitwarden/ui/vault/feature/item/VaultItemViewModelTest.kt
++++ b/app/src/test/kotlin/com/x8bit/bitwarden/ui/vault/feature/item/VaultItemViewModelTest.kt
+@@ -336,23 +336,47 @@ class VaultItemViewModelTest : BaseViewModelTest() {
+             }
+ 
+         @Test
+-        fun `ArchiveClick without Premium should show RequiresPremium dialog`() = runTest {
++        fun `ArchiveClick without Premium should archive the item`() = runTest {
+             mutableUserStateFlow.update {
+                 it?.copy(accounts = listOf(DEFAULT_USER_ACCOUNT.copy(isPremium = false)))
+             }
++            val cipherView = createMockCipherView(number = 1, isArchived = false)
++            every {
++                cipherView.toViewState(
++                    previousState = null,
++                    isPremiumUser = false,
++                    totpCodeItemData = null,
++                    canDelete = true,
++                    canRestore = false,
++                    canAssignToCollections = true,
++                    canEdit = true,
++                    baseIconUrl = Environment.Prod.Us.baseIconUrl,
++                    isIconLoadingDisabled = false,
++                    relatedLocations = persistentListOf(),
++                    hasOrganizations = true,
++                )
++            } returns DEFAULT_VIEW_STATE
++            mutableVaultItemFlow.value = DataState.Loaded(data = cipherView)
++            mutableAuthCodeItemFlow.value = DataState.Loaded(data = null)
++            mutableCollectionsStateFlow.value = DataState.Loaded(emptyList())
++            mutableFoldersStateFlow.value = DataState.Loaded(emptyList())
++            coEvery {
++                vaultRepo.archiveCipher(cipherId = "mockId-1", cipherView = cipherView)
++            } returns ArchiveCipherResult.Success
+             val viewModel = createViewModel(state = null)
+ 
+-            viewModel.trySendAction(VaultItemAction.Common.ArchiveClick)
+-
+-            assertEquals(
+-                DEFAULT_STATE.copy(
+-                    hasPremium = false,
+-                    dialog = VaultItemState.DialogState.RequiresPremium(
+-                        message = BitwardenString.archiving_items_is_a_premium_feature.asText(),
++            viewModel.eventFlow.test {
++                viewModel.trySendAction(VaultItemAction.Common.ArchiveClick)
++                assertEquals(VaultItemEvent.NavigateBack, awaitItem())
++            }
++            verify(exactly = 1) {
++                snackbarRelayManager.sendSnackbarData(
++                    data = BitwardenSnackbarData(
++                        message = BitwardenString.item_moved_to_archived.asText(),
+                     ),
+-                ),
+-                viewModel.stateFlow.value,
+-            )
++                    relay = SnackbarRelay.CIPHER_ARCHIVED_VIEW,
++                )
++            }
+         }
+ 
+         @Test
+diff --git a/app/src/test/kotlin/com/x8bit/bitwarden/ui/vault/feature/item/util/CipherViewExtensionsTest.kt b/app/src/test/kotlin/com/x8bit/bitwarden/ui/vault/feature/item/util/CipherViewExtensionsTest.kt
+index 3f7b2336fd4c73e4b5ee9c68db058c936112d0ef..3f9d3674e34a9b5ea27b3751d8d43a2aa6bfded4 100644
+--- a/app/src/test/kotlin/com/x8bit/bitwarden/ui/vault/feature/item/util/CipherViewExtensionsTest.kt
++++ b/app/src/test/kotlin/com/x8bit/bitwarden/ui/vault/feature/item/util/CipherViewExtensionsTest.kt
+@@ -103,7 +103,7 @@ class CipherViewExtensionsTest {
+                     .copy(currentCipher = cipherView),
+                 type = createLoginContent(isEmpty = false).copy(
+                     isPremiumUser = isPremiumUser,
+-                    canViewTotpCode = false,
++                    canViewTotpCode = true,
+                 ),
+             ),
+             viewState,
+diff --git a/app/src/test/kotlin/com/x8bit/bitwarden/ui/vault/feature/item/util/VaultItemTestUtil.kt b/app/src/test/kotlin/com/x8bit/bitwarden/ui/vault/feature/item/util/VaultItemTestUtil.kt
+index 59a15005431d54353f033592cb1521d1bcf48c69..10a7033669f6b56f3c35cf45acc18481833eb706 100644
+--- a/app/src/test/kotlin/com/x8bit/bitwarden/ui/vault/feature/item/util/VaultItemTestUtil.kt
++++ b/app/src/test/kotlin/com/x8bit/bitwarden/ui/vault/feature/item/util/VaultItemTestUtil.kt
+@@ -16,6 +16,7 @@ import com.bitwarden.vault.LoginUriView
+ import com.bitwarden.vault.LoginView
+ import com.bitwarden.vault.PasswordHistoryView
+ import com.bitwarden.vault.SshKeyView
++import com.x8bit.bitwarden.data.community.CommunityFeatureAccess
+ import com.x8bit.bitwarden.data.vault.datasource.sdk.model.createMockSdkCipherPermissions
+ import com.x8bit.bitwarden.data.vault.datasource.sdk.model.createMockSdkFido2CredentialList
+ import com.x8bit.bitwarden.ui.vault.feature.item.VaultItemState
+@@ -242,7 +243,7 @@ fun createCommonContent(
+                     id = "attachment-id",
+                     displaySize = "11 MB",
+                     isLargeFile = true,
+-                    isDownloadAllowed = isPremiumUser,
++                    isDownloadAllowed = CommunityFeatureAccess.attachments || isPremiumUser,
+                     url = "https://example.com",
+                     title = "test.mp4",
+                 ),
+diff --git a/app/src/test/kotlin/com/x8bit/bitwarden/ui/vault/feature/itemlisting/VaultItemListingViewModelTest.kt b/app/src/test/kotlin/com/x8bit/bitwarden/ui/vault/feature/itemlisting/VaultItemListingViewModelTest.kt
+index cbf474320e02856b0e000d8a68a0a4f988b21c5b..4fc09f35305d0907ad31748f52fcd905613291ab 100644
+--- a/app/src/test/kotlin/com/x8bit/bitwarden/ui/vault/feature/itemlisting/VaultItemListingViewModelTest.kt
++++ b/app/src/test/kotlin/com/x8bit/bitwarden/ui/vault/feature/itemlisting/VaultItemListingViewModelTest.kt
+@@ -1096,25 +1096,31 @@ class VaultItemListingViewModelTest : BaseViewModelTest() {
+         }
+ 
+     @Test
+-    fun `ArchiveClick without Premium should show ArchiveRequiresPremium dialog`() = runTest {
++    fun `ArchiveClick without Premium should archive the item`() = runTest {
+         mutableUserStateFlow.update {
+             it?.copy(accounts = listOf(DEFAULT_ACCOUNT.copy(isPremium = false)))
+         }
++        val cipherView = createMockCipherView(number = 1, clock = clock)
++        coEvery {
++            vaultRepository.archiveCipher(cipherId = "mockId-1", cipherView = cipherView)
++        } returns ArchiveCipherResult.Success
+         val viewModel = createVaultItemListingViewModel()
+ 
+-        viewModel.trySendAction(
+-            VaultItemListingsAction.OverflowOptionClick(
+-                action = ListingItemOverflowAction.VaultAction.ArchiveClick(cipherId = "mockId-1"),
+-            ),
+-        )
+-
+-        assertEquals(
+-            createVaultItemListingState(
+-                isPremium = false,
+-                dialogState = VaultItemListingState.DialogState.ArchiveRequiresPremium,
+-            ),
+-            viewModel.stateFlow.value,
+-        )
++        viewModel.eventFlow.test {
++            viewModel.trySendAction(
++                VaultItemListingsAction.OverflowOptionClick(
++                    action = ListingItemOverflowAction.VaultAction.ArchiveClick(
++                        cipherId = "mockId-1",
++                    ),
++                ),
++            )
++            assertEquals(
++                VaultItemListingEvent.ShowSnackbar(
++                    message = BitwardenString.item_moved_to_archived.asText(),
++                ),
++                awaitItem(),
++            )
++        }
+     }
+ 
+     @Test
+@@ -1822,7 +1828,7 @@ class VaultItemListingViewModelTest : BaseViewModelTest() {
+         }
+ 
+     @Test
+-    fun `AddVaultItemClick for file send without Premium and upgrade unavailable shows Error`() =
++    fun `AddVaultItemClick for file send without Premium and upgrade unavailable opens editor`() =
+         runTest {
+             every { premiumStateManager.isInAppUpgradeAvailable() } returns false
+             mutableUserStateFlow.value = DEFAULT_USER_STATE.copy(
+@@ -1833,24 +1839,16 @@ class VaultItemListingViewModelTest : BaseViewModelTest() {
+             )
+             viewModel.eventFlow.test {
+                 viewModel.trySendAction(VaultItemListingsAction.AddVaultItemClick)
+-                expectNoEvents()
++                assertEquals(
++                    VaultItemListingEvent.NavigateToAddSendItem(sendType = SendItemType.FILE),
++                    awaitItem(),
++                )
+             }
+-            assertEquals(
+-                createVaultItemListingState(
+-                    itemListingType = VaultItemListingState.ItemListingType.Send.SendFile,
+-                    dialogState = VaultItemListingState.DialogState.Error(
+-                        title = BitwardenString.send.asText(),
+-                        message = BitwardenString.send_file_premium_required.asText(),
+-                    ),
+-                    isPremium = false,
+-                ),
+-                viewModel.stateFlow.value,
+-            )
+         }
+ 
+     @Suppress("MaxLineLength")
+     @Test
+-    fun `AddVaultItemClick for file send without Premium and upgrade available shows Upgrade to Premium dialog`() =
++    fun `AddVaultItemClick for file send without Premium and upgrade available opens editor`() =
+         runTest {
+             every { premiumStateManager.isInAppUpgradeAvailable() } returns true
+             mutableUserStateFlow.value = DEFAULT_USER_STATE.copy(
+@@ -1861,16 +1859,11 @@ class VaultItemListingViewModelTest : BaseViewModelTest() {
+             )
+             viewModel.eventFlow.test {
+                 viewModel.trySendAction(VaultItemListingsAction.AddVaultItemClick)
+-                expectNoEvents()
++                assertEquals(
++                    VaultItemListingEvent.NavigateToAddSendItem(sendType = SendItemType.FILE),
++                    awaitItem(),
++                )
+             }
+-            assertEquals(
+-                createVaultItemListingState(
+-                    itemListingType = VaultItemListingState.ItemListingType.Send.SendFile,
+-                    dialogState = VaultItemListingState.DialogState.FileTypeRequiresPremium,
+-                    isPremium = false,
+-                ),
+-                viewModel.stateFlow.value,
+-            )
+         }
+ 
+     @Test
+diff --git a/app/src/test/kotlin/com/x8bit/bitwarden/ui/vault/feature/util/CipherListViewExtensionsTest.kt b/app/src/test/kotlin/com/x8bit/bitwarden/ui/vault/feature/util/CipherListViewExtensionsTest.kt
+index 380895196bbc49122c9eeea7430594647fe4f082..3d5c892618f0623fc18287a72565cd25d6d00da4 100644
+--- a/app/src/test/kotlin/com/x8bit/bitwarden/ui/vault/feature/util/CipherListViewExtensionsTest.kt
++++ b/app/src/test/kotlin/com/x8bit/bitwarden/ui/vault/feature/util/CipherListViewExtensionsTest.kt
+@@ -72,7 +72,7 @@ class CipherListViewExtensionsTest {
+     }
+ 
+     @Test
+-    fun `toOverflowActions should not return TOTP action when a user does not have Premium`() {
++    fun `toOverflowActions should return TOTP action when a user does not have Premium`() {
+         val type = CipherListViewType.Login(
+             createMockLoginListView(
+                 number = 1,
+@@ -91,9 +91,7 @@ class CipherListViewExtensionsTest {
+             isPremiumUser = false,
+         )
+ 
+-        assertTrue(
+-            result.none { it is ListingItemOverflowAction.VaultAction.CopyTotpClick },
+-        )
++        assertTrue(result.any { it is ListingItemOverflowAction.VaultAction.CopyTotpClick })
+     }
+ 
+     @Suppress("MaxLineLength")
+@@ -118,6 +116,10 @@ class CipherListViewExtensionsTest {
+         assertEquals(
+             listOf(
+                 ListingItemOverflowAction.VaultAction.CopyUsernameClick(username = username),
++                ListingItemOverflowAction.VaultAction.CopyTotpClick(
++                    cipherId = id,
++                    requiresPasswordReprompt = true,
++                ),
+                 ListingItemOverflowAction.VaultAction.ViewClick(
+                     cipherId = id,
+                     cipherType = CipherType.LOGIN,
+diff --git a/app/src/test/kotlin/com/x8bit/bitwarden/ui/vault/feature/vault/VaultViewModelTest.kt b/app/src/test/kotlin/com/x8bit/bitwarden/ui/vault/feature/vault/VaultViewModelTest.kt
+index 08bed9925949579e60429076019c2ae3889882fd..461e5013b09a04939c50b1ce7dbe7bdce46b9bae 100644
+--- a/app/src/test/kotlin/com/x8bit/bitwarden/ui/vault/feature/vault/VaultViewModelTest.kt
++++ b/app/src/test/kotlin/com/x8bit/bitwarden/ui/vault/feature/vault/VaultViewModelTest.kt
+@@ -15,7 +15,6 @@ import com.bitwarden.ui.platform.base.BaseViewModelTest
+ import com.bitwarden.ui.platform.components.account.model.AccountSummary
+ import com.bitwarden.ui.platform.components.snackbar.model.BitwardenSnackbarData
+ import com.bitwarden.ui.platform.manager.snackbar.SnackbarRelayManager
+-import com.bitwarden.ui.platform.resource.BitwardenDrawable
+ import com.bitwarden.ui.platform.resource.BitwardenString
+ import com.bitwarden.ui.util.Text
+ import com.bitwarden.ui.util.asText
+@@ -537,20 +536,20 @@ class VaultViewModelTest : BaseViewModelTest() {
+         }
+ 
+     @Test
+-    fun `actionCard should return UpgradePremium when eligible and content is showing`() {
++    fun `actionCard should suppress UpgradePremium when community features are enabled`() {
+         val contentViewState = DEFAULT_CONTENT_VIEW_STATE
+         val state = createMockVaultState(viewState = contentViewState).copy(
+             premiumCard = PremiumCard.UPGRADE,
+         )
+ 
+         assertEquals(
+-            VaultState.ActionCardState.UpgradePremium,
++            VaultState.ActionCardState.IntroducingArchive,
+             state.actionCard,
+         )
+     }
+ 
+     @Test
+-    fun `actionCard should return UpgradedToPremium when eligible and content is showing`() {
++    fun `actionCard should suppress UpgradedToPremium when community features are enabled`() {
+         val contentViewState = DEFAULT_CONTENT_VIEW_STATE
+         val state = createMockVaultState(viewState = contentViewState).copy(
+             isUpgradedToPremiumCardEligible = true,
+@@ -560,7 +559,7 @@ class VaultViewModelTest : BaseViewModelTest() {
+         )
+ 
+         assertEquals(
+-            VaultState.ActionCardState.UpgradedToPremium,
++            VaultState.ActionCardState.IntroducingArchive,
+             state.actionCard,
+         )
+     }
+@@ -1130,29 +1129,31 @@ class VaultViewModelTest : BaseViewModelTest() {
+         }
+ 
+     @Test
+-    fun `ArchiveClick without Premium should show ArchiveRequiresPremium dialog`() = runTest {
++    fun `ArchiveClick without Premium should archive the item`() = runTest {
+         mutableUserStateFlow.update { userState ->
+             userState?.copy(
+                 accounts = DEFAULT_USER_STATE.accounts.map { it.copy(isPremium = false) },
+             )
+         }
++        val cipherView = createMockCipherView(number = 1, clock = clock)
++        coEvery {
++            vaultRepository.archiveCipher(cipherId = "mockId-1", cipherView = cipherView)
++        } returns ArchiveCipherResult.Success
+         val viewModel = createViewModel()
+ 
+-        viewModel.trySendAction(
+-            VaultAction.OverflowOptionClick(
+-                overflowAction = ListingItemOverflowAction.VaultAction.ArchiveClick(
+-                    cipherId = "mockId-1",
++        viewModel.eventFlow.test {
++            viewModel.trySendAction(
++                VaultAction.OverflowOptionClick(
++                    overflowAction = ListingItemOverflowAction.VaultAction.ArchiveClick(
++                        cipherId = "mockId-1",
++                    ),
+                 ),
+-            ),
+-        )
+-
+-        assertEquals(
+-            DEFAULT_STATE.copy(
+-                isPremium = false,
+-                dialog = VaultState.DialogState.ArchiveRequiresPremium,
+-            ),
+-            viewModel.stateFlow.value,
+-        )
++            )
++            assertEquals(
++                VaultEvent.ShowSnackbar(BitwardenString.item_moved_to_archived.asText()),
++                awaitItem(),
++            )
++        }
+     }
+ 
+     @Test
+@@ -2605,7 +2606,7 @@ class VaultViewModelTest : BaseViewModelTest() {
+ 
+     @Suppress("MaxLineLength")
+     @Test
+-    fun `ArchiveClick without Premium and archived ciphers should display the ArchiveRequiresPremium dialog`() =
++    fun `ArchiveClick without Premium and no archived ciphers should open Archive`() =
+         runTest {
+             mutableUserStateFlow.update {
+                 DEFAULT_USER_STATE.copy(
+@@ -2633,42 +2634,17 @@ class VaultViewModelTest : BaseViewModelTest() {
+             }
+             val viewModel = createViewModel()
+ 
+-            viewModel.trySendAction(VaultAction.ArchiveClick)
+-            assertEquals(
+-                DEFAULT_STATE.copy(
+-                    isPremium = false,
+-                    dialog = VaultState.DialogState.ArchiveRequiresPremium,
+-                    viewState = VaultState.ViewState.Content(
+-                        loginItemsCount = 1,
+-                        cardItemsCount = 0,
+-                        identityItemsCount = 0,
+-                        secureNoteItemsCount = 0,
+-                        favoriteItems = listOf(),
+-                        folderItems = listOf(),
+-                        collectionItems = listOf(),
+-                        noFolderItems = listOf(),
+-                        trashItemsCount = 0,
+-                        totpItemsCount = 0,
+-                        itemTypesCount = CipherType.entries.size,
+-                        sshKeyItemsCount = 0,
+-                        bankAccountItemsCount = 0,
+-                        licenseItemsCount = 0,
+-                        passportItemsCount = 0,
+-                        archivedItemsCount = null,
+-                        archiveSubText = BitwardenString.premium_subscription_required.asText(),
+-                        archiveEndIcon = BitwardenDrawable.ic_locked,
+-                        showCardGroup = true,
+-                        showBankAccountGroup = false,
+-                        showLicenseGroup = false,
+-                        showPassportGroup = false,
+-                    ),
+-                ),
+-                viewModel.stateFlow.value,
+-            )
++            viewModel.eventFlow.test {
++                viewModel.trySendAction(VaultAction.ArchiveClick)
++                assertEquals(
++                    VaultEvent.NavigateToItemListing(VaultItemListingType.Archive),
++                    awaitItem(),
++                )
++            }
+         }
+ 
+     @Test
+-    fun `isPremium transitioning from false to true should refresh archive viewState fields`() =
++    fun `isPremium transition should leave community archive fields enabled`() =
+         runTest {
+             mutableUserStateFlow.update {
+                 DEFAULT_USER_STATE.copy(
+@@ -2713,9 +2689,9 @@ class VaultViewModelTest : BaseViewModelTest() {
+                     bankAccountItemsCount = 0,
+                     licenseItemsCount = 0,
+                     passportItemsCount = 0,
+-                    archivedItemsCount = null,
+-                    archiveSubText = BitwardenString.premium_subscription_required.asText(),
+-                    archiveEndIcon = BitwardenDrawable.ic_locked,
++                    archivedItemsCount = 0,
++                    archiveSubText = null,
++                    archiveEndIcon = null,
+                     showCardGroup = true,
+                     showBankAccountGroup = false,
+                     showLicenseGroup = false,
+@@ -4271,27 +4247,27 @@ class VaultViewModelTest : BaseViewModelTest() {
+     }
+ 
+     @Test
+-    fun `actionCard should return UpgradePremium when NoItems is showing and eligible`() {
++    fun `actionCard should suppress UpgradePremium when NoItems is showing`() {
+         val state = createMockVaultState(viewState = VaultState.ViewState.NoItems).copy(
+             premiumCard = PremiumCard.UPGRADE,
+             showImportActionCard = true,
+         )
+ 
+         assertEquals(
+-            VaultState.ActionCardState.UpgradePremium,
++            VaultState.ActionCardState.ImportItems,
+             state.actionCard,
+         )
+     }
+ 
+     @Test
+-    fun `actionCard should return PremiumNeedsAttention when NoItems is showing and eligible`() {
++    fun `actionCard should suppress PremiumNeedsAttention when NoItems is showing`() {
+         val state = createMockVaultState(viewState = VaultState.ViewState.NoItems).copy(
+             premiumCard = PremiumCard.NEEDS_ATTENTION,
+             showImportActionCard = true,
+         )
+ 
+         assertEquals(
+-            VaultState.ActionCardState.PremiumNeedsAttention,
++            VaultState.ActionCardState.ImportItems,
+             state.actionCard,
+         )
+     }
+@@ -4870,9 +4846,9 @@ class VaultViewModelTest : BaseViewModelTest() {
+                     itemTypesCount = 8,
+                     loginItemsCount = 1,
+                     totpItemsCount = validTotpIds.size,
+-                    archivedItemsCount = null,
+-                    archiveSubText = BitwardenString.premium_subscription_required.asText(),
+-                    archiveEndIcon = BitwardenDrawable.ic_locked,
++                    archivedItemsCount = 0,
++                    archiveSubText = null,
++                    archiveEndIcon = null,
+                 )
+                 assertEquals(
+                     createMockVaultState(
+diff --git a/app/src/test/kotlin/com/x8bit/bitwarden/ui/vault/feature/vault/util/VaultAddItemStateExtensionsTest.kt b/app/src/test/kotlin/com/x8bit/bitwarden/ui/vault/feature/vault/util/VaultAddItemStateExtensionsTest.kt
+index ebc0376413aec44dc97920922a8f04dd20b9f4a1..169cb14d8fc14a245a6e0af659b4757c88c276ff 100644
+--- a/app/src/test/kotlin/com/x8bit/bitwarden/ui/vault/feature/vault/util/VaultAddItemStateExtensionsTest.kt
++++ b/app/src/test/kotlin/com/x8bit/bitwarden/ui/vault/feature/vault/util/VaultAddItemStateExtensionsTest.kt
+@@ -947,7 +947,7 @@ class VaultAddItemStateExtensionsTest {
+ 
+     @Suppress("MaxLineLength")
+     @Test
+-    fun `toCipherView without Premium should delete the archive date from the original cipher`() {
++    fun `toCipherView without Premium should retain the archive date from the original cipher`() {
+         val cipherView = DEFAULT_BASE_CIPHER_VIEW.copy(
+             notes = null,
+             fields = emptyList(),
+@@ -993,7 +993,7 @@ class VaultAddItemStateExtensionsTest {
+                     passwordRevisionDate = FIXED_CLOCK.instant(),
+                     autofillOnPageLoad = false,
+                 ),
+-                archivedDate = null,
++                archivedDate = FIXED_CLOCK.instant(),
+             ),
+             result,
+         )
+diff --git a/app/src/test/kotlin/com/x8bit/bitwarden/ui/vault/feature/vault/util/VaultDataExtensionsTest.kt b/app/src/test/kotlin/com/x8bit/bitwarden/ui/vault/feature/vault/util/VaultDataExtensionsTest.kt
+index 8e78cf19c3cf4a8a2162da0160038f07b321d301..5aa4c89fc3e3b9c49655c813c125984f5393cc5a 100644
+--- a/app/src/test/kotlin/com/x8bit/bitwarden/ui/vault/feature/vault/util/VaultDataExtensionsTest.kt
++++ b/app/src/test/kotlin/com/x8bit/bitwarden/ui/vault/feature/vault/util/VaultDataExtensionsTest.kt
+@@ -456,9 +456,9 @@ class VaultDataExtensionsTest {
+                 bankAccountItemsCount = 0,
+                 licenseItemsCount = 0,
+                 passportItemsCount = 0,
+-                archivedItemsCount = null,
+-                archiveSubText = BitwardenString.premium_subscription_required.asText(),
+-                archiveEndIcon = BitwardenDrawable.ic_locked,
++                archivedItemsCount = 0,
++                archiveSubText = null,
++                archiveEndIcon = null,
+                 showCardGroup = true,
+                 showBankAccountGroup = false,
+                 showLicenseGroup = false,
+@@ -511,9 +511,9 @@ class VaultDataExtensionsTest {
+                 bankAccountItemsCount = 0,
+                 licenseItemsCount = 0,
+                 passportItemsCount = 0,
+-                archivedItemsCount = null,
+-                archiveSubText = BitwardenString.premium_subscription_required.asText(),
+-                archiveEndIcon = BitwardenDrawable.ic_locked,
++                archivedItemsCount = 0,
++                archiveSubText = null,
++                archiveEndIcon = null,
+                 showCardGroup = true,
+                 showBankAccountGroup = false,
+                 showLicenseGroup = false,
+@@ -566,9 +566,9 @@ class VaultDataExtensionsTest {
+                 bankAccountItemsCount = 0,
+                 licenseItemsCount = 0,
+                 passportItemsCount = 0,
+-                archivedItemsCount = null,
+-                archiveSubText = BitwardenString.premium_subscription_required.asText(),
+-                archiveEndIcon = BitwardenDrawable.ic_locked,
++                archivedItemsCount = 0,
++                archiveSubText = null,
++                archiveEndIcon = null,
+                 showCardGroup = true,
+                 showBankAccountGroup = false,
+                 showLicenseGroup = false,
+diff --git a/app/src/test/kotlin/com/x8bit/bitwarden/ui/vault/feature/verificationcode/VerificationCodeViewModelTest.kt b/app/src/test/kotlin/com/x8bit/bitwarden/ui/vault/feature/verificationcode/VerificationCodeViewModelTest.kt
+index 4856d065111c6330662d0e65333497276a4949c2..92b56418acd7d8b686ce735d5e98f2e4ec798fea 100644
+--- a/app/src/test/kotlin/com/x8bit/bitwarden/ui/vault/feature/verificationcode/VerificationCodeViewModelTest.kt
++++ b/app/src/test/kotlin/com/x8bit/bitwarden/ui/vault/feature/verificationcode/VerificationCodeViewModelTest.kt
+@@ -540,7 +540,7 @@ class VerificationCodeViewModelTest : BaseViewModelTest() {
+ 
+     @Suppress("MaxLineLength")
+     @Test
+-    fun `AuthCodeState Loaded with non Premium user and no org TOTP enabled should cause navigate back`() =
++    fun `AuthCodeState Loaded with non Premium user should return all codes`() =
+         runTest {
+             setupMockUri()
+             every { mockUserAccount.isPremium } returns false
+@@ -554,14 +554,15 @@ class VerificationCodeViewModelTest : BaseViewModelTest() {
+                 ),
+             )
+ 
+-            viewModel.eventFlow.test {
+-                assertEquals(VerificationCodeEvent.NavigateBack, awaitItem())
+-            }
++            val displayItems = (viewModel.stateFlow.value.viewState as?
++                VerificationCodeState.ViewState.Content)
++                ?.verificationCodeDisplayItems
++            assertEquals(2, displayItems?.size)
+         }
+ 
+     @Suppress("MaxLineLength")
+     @Test
+-    fun `AuthCodeState Loaded with non Premium user and one org TOTP enabled should return correct state`() =
++    fun `AuthCodeState Loaded with org TOTP flag should still return all codes`() =
+         runTest {
+             setupMockUri()
+             every { mockUserAccount.isPremium } returns false
+@@ -578,7 +579,7 @@ class VerificationCodeViewModelTest : BaseViewModelTest() {
+             val displayItems = (viewModel.stateFlow.value.viewState as?
+                 VerificationCodeState.ViewState.Content)
+                 ?.verificationCodeDisplayItems
+-            assertEquals(1, displayItems?.size)
++            assertEquals(2, displayItems?.size)
+         }
+ 
+     @Test
+diff --git a/gradle/libs.versions.toml b/gradle/libs.versions.toml
+index 9367d898d4daadc3dfee6fed0061714c19b2ff03..c4d1082319d4366e84e22f6c2a47c47a2f71b25f 100644
+--- a/gradle/libs.versions.toml
++++ b/gradle/libs.versions.toml
+@@ -3,7 +3,8 @@
+ 
+ # App version
+ appVersionCode = "1"
+-appVersionName = "2026.11.0"
++appVersionName = "1.0.0"
++bitwardenClientVersion = "2026.11.0"
+ 
+ # SDK Versions
+ compileSdk = "37"
+diff --git a/ui/src/main/res/drawable/logo_bitwarden_icon.xml b/ui/src/main/res/drawable/logo_bitwarden_icon.xml
+index 92f4268009b88c99c39de80245b28eb90945a7bd..4240170b79a472551a5c5a8ccd3212a9a7058ad6 100644
+--- a/ui/src/main/res/drawable/logo_bitwarden_icon.xml
++++ b/ui/src/main/res/drawable/logo_bitwarden_icon.xml
+@@ -5,7 +5,7 @@
+     android:viewportHeight="1024"
+     android:viewportWidth="1024">
+     <path
+-        android:fillColor="#175DDC"
++        android:fillColor="#111010"
+         android:pathData="M1024,864c0,88.4 -71.6,160 -160,160H160C71.6,1024 0,952.4 0,864V160C0,71.6 71.6,0 160,0h704c88.4,0 160,71.6 160,160V864z" />
+     <path android:pathData="M803.2,195.8l668.8,668.8l-376,694.4l-792,-792l208,120l280,-280z">
+         <aapt:attr name="android:fillColor">
+@@ -25,6 +25,6 @@
+         </aapt:attr>
+     </path>
+     <path
+-        android:fillColor="#ffffff"
++        android:fillColor="#FDB44B"
+         android:pathData="M802.24,194.52c-5.92,-5.92 -12.96,-8.96 -20.96,-8.96L242.72,185.56c-8.16,0 -15.04,3.04 -20.96,8.96C215.84,200.44 212.8,207.32 212.8,215.48l0,359.04c0,26.72 5.28,53.44 15.68,79.68c10.4,26.4 23.36,49.76 38.88,70.08c15.36,20.48 33.76,40.32 55.2,59.52c21.28,19.36 41.12,35.36 59.2,48.16c18.08,12.8 36.96,24.8 56.64,36.16c19.68,11.36 33.6,19.04 41.92,23.2c8.32,4 14.88,7.2 19.84,9.28c3.68,1.92 7.84,2.88 12.16,2.88c4.32,0 8.48,-0.96 12.16,-2.88c4.96,-2.24 11.68,-5.28 19.84,-9.28c8.32,-4 22.24,-11.84 41.92,-23.2c19.68,-11.36 38.56,-23.52 56.64,-36.16c18.08,-12.8 37.76,-28.8 59.2,-48.16c21.28,-19.36 39.68,-39.2 55.2,-59.52c15.36,-20.48 28.32,-43.84 38.72,-70.08c10.4,-26.4 15.68,-52.96 15.68,-79.68L811.68,215.48C811.2,207.32 808.16,200.44 802.24,194.52zM732.8,577.88C732.8,707.8 512,819.8 512,819.8L512,262.36l220.8,0C732.8,262.36 732.8,447.96 732.8,577.88z" />
+ </vector>
+diff --git a/ui/src/main/res/drawable/logo_shield_icon.xml b/ui/src/main/res/drawable/logo_shield_icon.xml
+index 860d4c96303199efe4b23db0320112bc3f529291..73853aebc25dbcecea782a73d01b66f2002d259f 100644
+--- a/ui/src/main/res/drawable/logo_shield_icon.xml
++++ b/ui/src/main/res/drawable/logo_shield_icon.xml
+@@ -9,6 +9,6 @@
+       android:translateY="27.54">
+     <path
+         android:pathData="M376.4,12.2c-3.7,-3.7 -8.1,-5.6 -13.1,-5.6H26.7c-5.1,0 -9.4,1.9 -13.1,5.6C9.9,15.9 8,20.2 8,25.3v224.4c0,16.7 3.3,33.4 9.8,49.8c6.5,16.5 14.6,31.1 24.3,43.8c9.6,12.8 21.1,25.2 34.5,37.2c13.3,12.1 25.7,22.1 37,30.1c11.3,8 23.1,15.5 35.4,22.6c12.3,7.1 21,11.9 26.2,14.5c5.2,2.5 9.3,4.5 12.4,5.8c2.3,1.2 4.9,1.8 7.6,1.8c2.7,0 5.3,-0.6 7.6,-1.8c3.1,-1.4 7.3,-3.3 12.4,-5.8c5.2,-2.5 13.9,-7.4 26.2,-14.5c12.3,-7.1 24.1,-14.7 35.4,-22.6c11.3,-8 23.6,-18 37,-30.1c13.3,-12.1 24.8,-24.5 34.5,-37.2c9.6,-12.8 17.7,-27.4 24.2,-43.8c6.5,-16.5 9.8,-33.1 9.8,-49.8V25.3C382,20.2 380.1,15.9 376.4,12.2zM333,251.8C333,333 195,403 195,403V54.6h138C333,54.6 333,170.6 333,251.8z"
+-        android:fillColor="#FFFFFF"/>
++        android:fillColor="#FDB44B"/>
+   </group>
+ </vector>
+diff --git a/ui/src/main/res/values/strings.xml b/ui/src/main/res/values/strings.xml
+index 28eb6fee1726a40909c5e82c1d9edae8c4606299..c4d751b6b4483f0d20e4227ba34dc2abb60b3376 100644
+--- a/ui/src/main/res/values/strings.xml
++++ b/ui/src/main/res/values/strings.xml
+@@ -75,9 +75,9 @@
+     <string name="yes">Yes</string>
+     <string name="account">Account</string>
+     <string name="account_created_success">Your new account has been created!</string>
+-    <string name="set_bitwarden_as_passkey_manager_description">Set Bitwarden as your passkey provider in device settings.</string>
++    <string name="set_bitwarden_as_passkey_manager_description">Set OpenWarden as your passkey provider in device settings.</string>
+     <string name="avoid_ambiguous_characters">Avoid ambiguous characters</string>
+-    <string name="bitwarden_autofill_service">Bitwarden Autofill Service</string>
++    <string name="bitwarden_autofill_service">OpenWarden Autofill Service</string>
+     <string name="change_master_password">Change master password</string>
+     <string name="close">Close</string>
+     <string name="close_app">Close app</string>
+@@ -298,7 +298,7 @@ Scanning will happen automatically.</string>
+     <string name="no_items_folder">There are no items in this folder.</string>
+     <string name="no_items_trash">There are no items in the trash.</string>
+     <string name="autofill_accessibility_summary">Assist with filling username and password fields in other apps and on the web.</string>
+-    <string name="autofill_service_description">The Bitwarden autofill service uses the Android Autofill Framework to assist in filling login information into other apps on your device.</string>
++    <string name="autofill_service_description">The OpenWarden autofill service uses the Android Autofill Framework to assist in filling login information into other apps on your device.</string>
+     <string name="bitwarden_autofill_go_to_settings">We were unable to automatically open the Android autofill settings menu for you. You can navigate to the autofill settings menu manually from Android Settings &gt; System &gt; Languages and input &gt; Advanced &gt; Autofill service.</string>
+     <string name="custom_field_name">Custom field name</string>
+     <string name="field_type_boolean">Boolean</string>
+@@ -636,9 +636,9 @@ select Add TOTP to store the key safely</string>
+     <string name="catch_all_email_description">Use your domain’s configured catch-all inbox.</string>
+     <string name="forwarded_email_description">Generate an email alias with an external forwarding service.</string>
+     <string name="accessibility_service_disclosure">Accessibility Service Disclosure</string>
+-    <string name="accessibility_disclosure_text">Bitwarden uses the Accessibility Service to search for login fields in apps and websites, then establish the appropriate field IDs for entering a username &amp; password when a match for the app or site is found. We do not store any of the information presented to us by the service, nor do we make any attempt to control any on-screen elements beyond text entry of credentials.</string>
+-    <string name="accessibility_disclosure_start_up_text_1">This notice is required before Bitwarden can offer accessibility-based autofill.</string>
+-    <string name="accessibility_disclosure_start_up_text_2">Bitwarden offers an optional autofill method that uses Android’s Accessibility Service to detect login fields. If you enable it, Bitwarden will identify the appropriate fields and fill in your credentials when a match is found.</string>
++    <string name="accessibility_disclosure_text">OpenWarden uses the Accessibility Service to search for login fields in apps and websites, then establish the appropriate field IDs for entering a username &amp; password when a match for the app or site is found. We do not store any of the information presented to us by the service, nor do we make any attempt to control any on-screen elements beyond text entry of credentials.</string>
++    <string name="accessibility_disclosure_start_up_text_1">This notice is required before OpenWarden can offer accessibility-based autofill.</string>
++    <string name="accessibility_disclosure_start_up_text_2">OpenWarden offers an optional autofill method that uses Android’s Accessibility Service to detect login fields. If you enable it, OpenWarden will identify the appropriate fields and fill in your credentials when a match is found.</string>
+     <string name="accessibility_disclosure_start_up_text_3">We don’t store any information about what’s onscreen while you use the Accessibility Service, and we don’t control any onscreen elements beyond credential entry.</string>
+     <string name="i_understand">I understand</string>
+     <string name="accept">Accept</string>
+@@ -719,8 +719,8 @@ Do you want to switch to this account?</string>
+     <string name="session_timeout">Session timeout</string>
+     <string name="session_timeout_action">Session timeout action</string>
+     <string name="account_fingerprint_phrase">Account fingerprint phrase</string>
+-    <string name="passkey_management_explanation_long">Use Bitwarden to save new passkeys and log in with passkeys stored in your vault.</string>
+-    <string name="autofill_services_explanation_long">Allow Bitwarden to use your saved login information to sign in to other apps on your device.</string>
++    <string name="passkey_management_explanation_long">Use OpenWarden to save new passkeys and log in with passkeys stored in your vault.</string>
++    <string name="autofill_services_explanation_long">Allow OpenWarden to use your saved login information to sign in to other apps on your device.</string>
+     <string name="use_inline_autofill_explanation_long">Choose how your autofill suggestions will appear when you sign in to other apps on your device.</string>
+     <string name="additional_options">Additional options</string>
+     <string name="continue_to_web_app">Continue to web app?</string>
+@@ -1043,7 +1043,7 @@ Do you want to switch to this account?</string>
+     <string name="missing_send_resync_your_vault">Missing Send re-sync your vault</string>
+     <string name="use_dynamic_colors">Use dynamic colors</string>
+     <string name="use_dynamic_colors_question">Use dynamic colors?</string>
+-    <string name="dynamic_colors_may_not_adhere_to_accessibility_guidelines">This color scheme automatically applies system colors to Bitwarden based on your current wallpaper. These colors may not meet all accessibility guidelines.</string>
++    <string name="dynamic_colors_may_not_adhere_to_accessibility_guidelines">This color scheme automatically applies system colors to OpenWarden based on your current wallpaper. These colors may not meet all accessibility guidelines.</string>
+     <string name="passkey_operation_failed_because_browser_x_is_not_trusted">Passkey operation failed because browser (%1$s) is not recognized. Select “Trust” to add %1$s to the list of locally trusted applications.</string>
+     <string name="passkey_operation_failed_because_the_browser_is_not_trusted">Passkey operation failed because the browser is not trusted.</string>
+     <string name="trust">Trust</string>
+@@ -1422,8 +1422,8 @@ Do you want to switch to this account?</string>
+     <string name="local_network_access_required">Local network access required</string>
+     <string name="ask_again_later">Ask again later</string>
+     <string name="enable_local_network_access">Enable local network access</string>
+-    <string name="bitwarden_needs_local_network_access_to_sync_with_your_server">Bitwarden needs local network access to sync with your server. Without this permission, the app won’t be able to connect.</string>
+-    <string name="without_this_permission_bitwarden_wont_be_able_to_sync_with_your_server">Without this permission, Bitwarden won’t be able to connect and sync with your server. You can enable this in your device settings.</string>
++    <string name="bitwarden_needs_local_network_access_to_sync_with_your_server">OpenWarden needs local network access to sync with your server. Without this permission, the app won’t be able to connect.</string>
++    <string name="without_this_permission_bitwarden_wont_be_able_to_sync_with_your_server">Without this permission, OpenWarden won’t be able to connect and sync with your server. You can enable this in your device settings.</string>
+     <string name="your_request_was_interrupted_because_the_app_needs_local_network_access">Your request was interrupted because the app needs local network access. You can enable this in your device settings.</string>
+     <string name="continue_to_stripe">Continue to Stripe?</string>
+     <string name="youll_be_taken_to_stripe_to_manage_your_subscription_cancellation">You’ll be taken to Stripe to manage your subscription cancellation.</string>
+@@ -1445,8 +1445,41 @@ Do you want to switch to this account?</string>
+     <string name="use_this_username">Use this username</string>
+     <string name="create_login">Create login</string>
+     <string name="keep_unlocking_with_biometrics">Keep unlocking with biometrics</string>
+-    <string name="weve_made_a_security_update">We’ve made a security update. Confirm your biometrics again to keep using them to unlock Bitwarden.</string>
++    <string name="weve_made_a_security_update">We’ve made a security update. Confirm your biometrics again to keep using them to unlock OpenWarden.</string>
+     <string name="turn_off">Turn off</string>
+     <string name="turn_off_biometric_question">Turn off biometrics?</string>
+     <string name="unlocking_will_require_your_master_password">Unlocking will require your master password. You can turn biometrics back on in Settings.</string>
++    <string name="vault_health">Vault health</string>
++    <string name="vault_health_description">Scan decrypted vault data on this device. Password breach checks use a privacy-preserving public password-range service.</string>
++    <string name="scan_vault">Scan vault</string>
++    <string name="scanning_vault">Scanning vault…</string>
++    <string name="vault_health_score">Health score: %1$d%%</string>
++    <string name="vault_health_logins_scanned">Logins scanned: %1$d</string>
++    <string name="vault_health_exposed">Exposed passwords</string>
++    <string name="vault_health_weak">Weak passwords</string>
++    <string name="vault_health_reused">Reused passwords</string>
++    <string name="vault_health_old">Passwords older than 180 days</string>
++    <string name="vault_health_unsecured">Unsecured HTTP logins</string>
++    <string name="vault_health_suspicious">Suspicious internationalized domains</string>
++    <string name="suspicious_domain_warning">Check this website carefully. This login contains an internationalized domain that may imitate another website. Verify the address before opening or filling it.</string>
++    <string name="vault_health_duplicate">Duplicate logins</string>
++    <string name="vault_health_missing_two_factor">Logins without saved 2FA</string>
++    <string name="vault_health_scan_failed">The local vault health scan could not be completed.</string>
++    <string name="openwarden">OpenWarden</string>
++    <string name="openwarden_community">OpenWarden Community</string>
++    <string name="openwarden_community_edition_version">Community Edition · v1.0.0</string>
++    <string name="openwarden_intro">OpenWarden is an independent, open-source client derived from Bitwarden’s official applications. It is designed to remain compatible with Bitwarden cloud and self-hosted servers while adding community-built, on-device security features.</string>
++    <string name="included_with_openwarden">Included with OpenWarden</string>
++    <string name="openwarden_feature_totp">Built-in authenticator codes (TOTP)</string>
++    <string name="openwarden_feature_vault_health">Vault Health reports and security score</string>
++    <string name="openwarden_feature_password_checks">Weak, reused, exposed, old, and duplicate password checks</string>
++    <string name="openwarden_feature_breach_monitoring">Breach monitoring using privacy-preserving password checks</string>
++    <string name="openwarden_feature_phishing_warnings">Suspicious-domain and phishing warnings</string>
++    <string name="openwarden_feature_two_factor_insights">Missing two-factor authentication insights</string>
++    <string name="openwarden_feature_unsecured_websites">Unsecured website warnings</string>
++    <string name="openwarden_feature_local_archive">Device-local vault archive</string>
++    <string name="openwarden_feature_password_guidance">Inline password-risk guidance</string>
++    <string name="openwarden_feature_no_subscription">No OpenWarden subscription required</string>
++    <string name="openwarden_compatibility_notice">OpenWarden features run locally on your device. Server-managed capabilities—including organizations, emergency access, file storage, sharing, and Send limits—continue to depend on the connected Bitwarden server and account.</string>
++    <string name="openwarden_independent_project_notice">OpenWarden is an independent community project and is not affiliated with or endorsed by Bitwarden, Inc.</string>
+ </resources>

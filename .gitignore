@@ -1,0 +1,8 @@
+.DS_Store
+*.apk
+*.dmg
+*.zip
+build/
+dist/
+node_modules/
+

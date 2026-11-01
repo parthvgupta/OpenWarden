@@ -1,0 +1,7 @@
+{
+  "repository": "https://github.com/bitwarden/android.git",
+  "commit": "262dba3e663b2f9a4f2196515331bce9d7b58ad9",
+  "openwardenVersion": "1.0.0",
+  "bitwardenCompatibilityVersion": "2026.11.0"
+}
+

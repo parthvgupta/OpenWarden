@@ -1,0 +1,7 @@
+{
+  "repository": "https://github.com/bitwarden/clients.git",
+  "commit": "b793bdc6cf15f87814f0b3de26b795afcc7774ec",
+  "openwardenVersion": "1.0.0",
+  "bitwardenCompatibilityVersion": "2026.10.2"
+}
+

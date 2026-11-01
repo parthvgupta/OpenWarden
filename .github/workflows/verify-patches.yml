@@ -1,0 +1,41 @@
+name: Verify published patches
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Clone pinned Android upstream
+        run: |
+          git clone --filter=blob:none https://github.com/bitwarden/android.git upstream-android
+          git -C upstream-android checkout 262dba3e663b2f9a4f2196515331bce9d7b58ad9
+      - name: Verify Android patch
+        run: git -C upstream-android apply --check "$GITHUB_WORKSPACE/android/code-changes/openwarden-android.patch"
+
+  clients:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        patch:
+          - macos/code-changes/openwarden-macos.patch
+          - extension/code-changes/openwarden-extension.patch
+    steps:
+      - uses: actions/checkout@v4
+      - name: Clone pinned Clients upstream
+        run: |
+          git clone --filter=blob:none https://github.com/bitwarden/clients.git upstream-clients
+          git -C upstream-clients checkout b793bdc6cf15f87814f0b3de26b795afcc7774ec
+      - name: Apply shared client patch
+        run: git -C upstream-clients apply "$GITHUB_WORKSPACE/shared/code-changes/openwarden-clients-shared.patch"
+      - name: Verify platform patch
+        run: git -C upstream-clients apply --check "$GITHUB_WORKSPACE/${{ matrix.patch }}"
+
