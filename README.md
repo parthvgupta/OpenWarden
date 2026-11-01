@@ -63,6 +63,13 @@ Start with the platform guides:
 - [macOS: install, inspect, build, and verify](macos/README.md)
 - [Brave/Chrome: install, inspect, build, and verify](extension/README.md)
 
+Project guidance:
+
+- [Compatibility with Bitwarden and Vaultwarden](docs/COMPATIBILITY.md)
+- [Troubleshooting login, sync, and installation](docs/TROUBLESHOOTING.md)
+- [Release and update policy](docs/RELEASES.md)
+- [Getting help and reporting bugs](SUPPORT.md)
+
 ## Installation
 
 ### Android
@@ -88,15 +95,19 @@ Start with the platform guides:
 
 Developer-mode extensions do not update automatically. Review and install each future release yourself.
 
+OpenWarden does not currently include an automatic updater on any platform. Follow this repository's releases and use the verification steps in [`docs/RELEASES.md`](docs/RELEASES.md) before updating.
+
 ## Security model
 
 OpenWarden inherits the core encrypted-vault architecture of the pinned upstream Bitwarden clients and adds community features around the local client. That inheritance is not a substitute for an independent security audit. Treat every release—including this one—as security-sensitive software: verify the hash, inspect the patches, and build it yourself when your threat model requires it.
+
+OpenWarden is a client, not a backup service. A device-local archive is not a substitute for a tested server backup or an export you control. Keep a recovery plan appropriate to the Bitwarden-compatible server you use.
 
 Please report vulnerabilities privately using the process in [`SECURITY.md`](SECURITY.md). Do not post secrets, vault exports, master passwords, recovery codes, or live exploit details in a public issue.
 
 ## Contributing
 
-Bug reports, code review, build verification, documentation corrections, and independent security analysis are welcome. Read [`CONTRIBUTING.md`](CONTRIBUTING.md) before opening a pull request.
+Bug reports, code review, build verification, documentation corrections, and independent security analysis are welcome. For a problem, start with [`SUPPORT.md`](SUPPORT.md); for a code change, read [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## Independence and trademarks
 

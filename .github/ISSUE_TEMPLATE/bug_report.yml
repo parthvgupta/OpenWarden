@@ -1,0 +1,120 @@
+name: Bug report
+description: Report a reproducible OpenWarden defect
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use Discussions for setup questions and ideas. For a possible vulnerability, use private vulnerability reporting instead of this form.
+
+        Search open and closed issues and read SUPPORT.md before submitting. Never include vault data, credentials, tokens, private server URLs, or an unreviewed diagnostic capture.
+
+  - type: checkboxes
+    id: prerequisites
+    attributes:
+      label: Prerequisites
+      options:
+        - label: I am using the latest OpenWarden release and verified the downloaded file against SHA256SUMS.
+          required: true
+        - label: I searched open and closed issues and read the compatibility and troubleshooting guides.
+          required: true
+        - label: I removed secrets and personal data from everything in this report.
+          required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: OpenWarden platform
+      options:
+        - Android
+        - macOS
+        - Brave extension
+        - Chrome extension
+        - Other Chromium extension
+    validations:
+      required: true
+
+  - type: input
+    id: openwarden-version
+    attributes:
+      label: OpenWarden version
+      placeholder: 1.0.0
+    validations:
+      required: true
+
+  - type: input
+    id: environment
+    attributes:
+      label: Device, operating system, and browser version
+      placeholder: Pixel 9 / Android 16, or MacBook Pro / macOS 26.1, or Brave 1.x
+    validations:
+      required: true
+
+  - type: dropdown
+    id: server-type
+    attributes:
+      label: Server type
+      options:
+        - Bitwarden cloud
+        - Official Bitwarden self-hosted
+        - Vaultwarden
+        - Another Bitwarden-compatible server
+        - Unknown
+    validations:
+      required: true
+
+  - type: input
+    id: server-version
+    attributes:
+      label: Server version
+      description: Required for self-hosted servers. Do not include a private hostname.
+      placeholder: Vaultwarden 1.x or Bitwarden self-host 2026.x
+
+  - type: dropdown
+    id: official-client
+    attributes:
+      label: Result in the matching official Bitwarden client
+      options:
+        - The same action works
+        - The same action also fails
+        - Not tested
+        - Not applicable
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open ...
+        2. Select ...
+        3. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected result
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual result
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Redacted logs or screenshots
+      description: Include only the smallest relevant excerpt. Remove email addresses, server URLs, item names, tokens, request bodies, and response bodies.
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Include installation source, whether this began after an update, and any safe comparison that helps isolate the client or server.

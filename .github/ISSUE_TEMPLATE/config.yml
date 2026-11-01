@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Setup help and questions
+    url: https://github.com/parthvgupta/OpenWarden/discussions/categories/q-a
+    about: Ask for help after reading SUPPORT.md and the troubleshooting guide.
+  - name: Ideas and feature requests
+    url: https://github.com/parthvgupta/OpenWarden/discussions/categories/ideas
+    about: Propose client-side features and discuss their security and compatibility impact.
+  - name: Report a vulnerability privately
+    url: https://github.com/parthvgupta/OpenWarden/security/advisories/new
+    about: Use this for anything that may expose secrets, privacy, or authorization boundaries.
