@@ -36,6 +36,29 @@ OpenWarden enables functionality that can be implemented safely on your own devi
 
 OpenWarden does not operate a replacement cloud, proxy your master password, or upload your vault to an OpenWarden service. Account login, encrypted sync, organizations, sharing, attachments, emergency access, and other server-backed operations continue to use the Bitwarden-compatible server selected in the app.
 
+## Bitwarden Free vs OpenWarden
+
+This is the practical difference when both clients connect to the same free Bitwarden-compatible account:
+
+| Capability | Official Bitwarden Free | OpenWarden v1.0.0 | How OpenWarden provides it |
+| --- | --- | --- | --- |
+| Unlimited vault items, device sync, generator, and autofill | Included | Included | Inherited from Bitwarden |
+| Integrated authenticator codes (TOTP) | Not included | **Unlocked** on Android, macOS, and Brave/Chrome | Generated on your device |
+| Full vault-health details | Limited | **Unlocked** on Android, macOS, and Brave/Chrome | Scanned on your device |
+| Weak, reused, exposed, and old-password checks | Not included as a complete local report | **Unlocked** | Local analysis; exposed-password checks use a privacy-preserving range query |
+| Duplicate logins, missing saved 2FA, and unsecured-site checks | Not included as a combined report | **Unlocked** | Local analysis |
+| Phishing and suspicious-domain protection | Not included in Free | **Unlocked** | Browser phishing blocker plus local suspicious-domain checks |
+| Item archive | Premium-gated | **Unlocked** | Device-local archive overlay |
+| Encrypted file attachments | Not included | Not unlocked | Requires server storage and entitlement |
+| File Send | Text only | Text only without server entitlement | File storage and limits remain server-controlled |
+| Emergency access | Not included | Not unlocked | Requires server workflows and authorization |
+| Yubico OTP and Duo account login | Not included | Not unlocked | Authentication is enforced by the server |
+| Family sharing and unlimited collections | Free organization: 2 users and 2 collections | Same server limits | Organizations and sharing remain server-controlled |
+
+OpenWarden unlocks the personal premium features that can genuinely run inside the client. It does **not** turn a free server account into a paid Bitwarden account or fake server entitlements.
+
+Bitwarden plan details change over time; the official [Password Manager plans](https://bitwarden.com/help/password-manager-plans/) page is the source for current Free and Premium limits. OpenWarden-specific behavior is defined by the public patches in this repository.
+
 ## Transparency first
 
 A password manager should never ask for blind trust. Every OpenWarden release includes enough public evidence to inspect the changes and rebuild the clients yourself:
@@ -70,32 +93,15 @@ Project guidance:
 - [Release and update policy](docs/RELEASES.md)
 - [Getting help and reporting bugs](SUPPORT.md)
 
-## Installation
+## Quick install
 
-### Android
+| Platform | Install |
+| --- | --- |
+| Android | Download the APK, verify its hash, and open it. [Detailed guide](android/README.md) |
+| macOS | Open the DMG and drag OpenWarden to Applications. For the first launch, right-click the app and choose **Open**. [Detailed guide](macos/README.md) |
+| Brave / Chrome | Extract the ZIP, enable Developer mode at `brave://extensions` or `chrome://extensions`, then choose **Load unpacked**. [Detailed guide](extension/README.md) |
 
-1. Download the APK from the latest release.
-2. Confirm its SHA-256 value against [`SHA256SUMS`](SHA256SUMS).
-3. Allow installation from your browser or file manager when Android prompts.
-4. Install the APK. Future OpenWarden APKs must be signed with the same release key to update it in place.
-
-### macOS
-
-1. Download and open the universal DMG.
-2. Drag OpenWarden into Applications.
-3. Because v1.0.0 is not Apple-notarized, macOS may block the first launch. Right-click OpenWarden and choose **Open**, or approve it under **System Settings → Privacy & Security**.
-4. Do not disable Gatekeeper globally.
-
-### Brave or Chrome
-
-1. Download and extract the extension ZIP.
-2. Open `brave://extensions` or `chrome://extensions`.
-3. Enable **Developer mode**.
-4. Choose **Load unpacked** and select the extracted folder.
-
-Developer-mode extensions do not update automatically. Review and install each future release yourself.
-
-OpenWarden does not currently include an automatic updater on any platform. Follow this repository's releases and use the verification steps in [`docs/RELEASES.md`](docs/RELEASES.md) before updating.
+Updates are manual. Verify every download against [`SHA256SUMS`](SHA256SUMS); see the [release policy](docs/RELEASES.md) for platform-specific identity checks.
 
 ## Security model
 
